@@ -547,8 +547,14 @@ class OrchestratorDaemon:
         self._seed_id_by_category: dict[Category, str | None] = (
             self._discover_seed_ids()
         )
-        # A4 will rehydrate signal_window + replayed_attack_ids from disk.
-        # For A2: clean-slate at construction unless caller pre-populated them.
+        # A4: rehydrate signal_window from on-disk verdicts so a resumed
+        # daemon's halt evaluation reflects the prior session's signal.
+        # replayed_attack_ids stays in-memory for MVP — a kill -9 between
+        # the replay-pick and the next verdict write would re-replay a
+        # finding, which is an acceptable correctness leak for MVP (cost
+        # bounded by mutation depth + cost cap; replay is also idempotent
+        # from the human reviewer's perspective).
+        self._rehydrate_signal_window_from_disk()
 
     # ------------------------------------------------------------------ public
 
@@ -939,6 +945,53 @@ class OrchestratorDaemon:
             )
             self._seed_cache[cache_key] = cached
         return int(cached["primary_patient_id"])
+
+    def _rehydrate_signal_window_from_disk(self) -> None:
+        """Populate the rolling signal window from the run-dir's persisted
+        verdicts so a resumed daemon's halt evaluation matches the pre-kill
+        state. Reads the LAST K verdicts (by lexical sort order on filename,
+        which mirrors the sequence number embedded in verdict IDs).
+
+        Costs are bounded by `config.recent_k` (default 10). Error handling
+        is intentionally two-level (audit HIGH):
+
+        - **Verdict parse failures** are silently skipped — `.tmp` residue
+          on non-POSIX filesystems where `os.replace` isn't strictly atomic
+          is plausibly transient and shouldn't pollute warning logs.
+        - **Attack load failures for a successfully-parsed verdict** are
+          STRUCTURAL inconsistency (the verdict references an attack_id
+          whose file is missing). Emitted as a WARNING so operators see
+          it — silently dropping these would under-populate the window
+          and could suppress a `signal_to_cost_collapsed` halt.
+        """
+        verdicts_dir = self.handle.verdicts_dir
+        if not verdicts_dir.exists():
+            return
+        verdict_paths = sorted(verdicts_dir.glob("*.json"))
+        if not verdict_paths:
+            return
+        for path in verdict_paths[-self.config.recent_k :]:
+            try:
+                verdict = self.handle.load_verdict(path.stem)
+            except Exception:  # noqa: BLE001 — tolerate transient verdict-file races
+                continue
+            try:
+                attack = self.handle.load_attack(verdict.attack_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "signal_window rehydration: verdict %s references missing "
+                    "or unreadable attack %s (%s) — entry dropped; "
+                    "signal_to_cost may be under-counted on this resume",
+                    verdict.verdict_id,
+                    verdict.attack_id,
+                    exc,
+                )
+                continue
+            self.signal_window.push(
+                category=attack.category,
+                verdict=verdict.verdict,
+                cost_usd=attack.cost_usd + verdict.cost_usd,
+            )
 
     def _discover_seed_ids(self) -> dict[Category, str | None]:
         """Map each MVP category → seed_id (first yaml file's stem) OR None.
