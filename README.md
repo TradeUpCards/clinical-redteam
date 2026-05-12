@@ -35,6 +35,7 @@ The system is built around three established frameworks rather than invented tax
 | | |
 |---|---|
 | **Target system (under attack)** | https://142-93-242-40.nip.io (AgentForge Clinical Co-Pilot — synthetic test data only, no real PHI) |
+| **Attacker platform (this repo, deployed)** | https://redteam-142-93-242-40.nip.io — live status of the adversarial daemon: recent runs, vuln reports, cost ledger |
 | **Companion repo (target)** | https://github.com/TradeUpCards/agentforge |
 | **GitLab (primary)** | https://labs.gauntletai.com/coryvandenberg/clinical-redteam |
 | **GitHub mirror** | https://github.com/TradeUpCards/clinical-redteam |

@@ -215,24 +215,102 @@ If `LANGFUSE_*` keys are set, the same activity is in the Langfuse UI as inter-a
 
 ---
 
-## 9. What "production" deployment would look like
+## 9. Deploying to the droplet (production-style, co-located with the target)
 
-The MVP runs **from your local box** (or any box with the install above) against the deployed target. That satisfies the PRD hard gate "platform must be running live tests against a live system."
+The MVP attacker is deployed at `https://redteam-142-93-242-40.nip.io` alongside the target Co-Pilot on the same DigitalOcean droplet. Two Docker compose stacks sharing one network: W2's `/opt/agentforge/` (target) + this repo's `/opt/redteam/` (attacker).
 
-For continuous 24/7 operation as a deployed service — not required by MVP — the additional pieces are:
+### Architecture
 
-| Concern | MVP state | Production add |
+```
+                       Caddy (W2's stack — ports 80/443, TLS)
+                       │
+       ┌───────────────┼───────────────┐
+       │                               │
+  142-93-242-40.nip.io           redteam-142-93-242-40.nip.io
+       │                               │
+  openemr:443                    redteam-status:8080
+                                       │
+                                       │ reads evals/ artifacts
+                                       │
+                                 redteam-daemon ──→ agent:8000 (W2 internal)
+                                 (continuous loop)
+```
+
+The attacker's `redteam-daemon` reaches the target's `agent:8000` directly over the shared Docker network — no SSH tunnel needed in production. The attacker's status app (read-only HTTP) is fronted by Caddy with auto-TLS via nip.io + Let's Encrypt.
+
+### One-time droplet setup
+
+```bash
+# On the droplet, as root (DigitalOcean's Docker image works out of the box).
+# Assumes W2 AgentForge is already deployed at /opt/agentforge/ — that's the
+# prerequisite. If W2 isn't deployed yet, see companion repo's .deploy/README.md.
+
+mkdir -p /opt/redteam
+cd /opt/redteam
+git clone https://github.com/TradeUpCards/clinical-redteam.git repo
+cd repo
+sudo bash .deploy/bootstrap.sh
+```
+
+The bootstrap is **idempotent** — safe to re-run. On first run it:
+
+1. Generates `/opt/redteam/.env` with the W2 HMAC secret already wired (pulled from `/opt/agentforge/.env`) — only `OPENROUTER_API_KEY` needs manual entry
+2. Writes `/opt/redteam/docker-compose.yml` from the template at `.deploy/docker-compose.redteam.yml`
+3. Patches `/opt/agentforge/Caddyfile` to add the `redteam-142-93-242-40.nip.io` server block (managed-block markers keep the patch idempotent)
+4. Reloads Caddy in the W2 stack so the new TLS cert provisions on first request
+5. Builds the attacker image (~2-3 min on first build)
+6. Brings up `redteam-daemon` + `redteam-status` services
+7. Verifies the status URL responds via curl through Caddy
+
+### After first run — set the OpenRouter key
+
+```bash
+sudo nano /opt/redteam/.env
+# Set OPENROUTER_API_KEY=sk-or-v1-...
+sudo bash /opt/redteam/repo/.deploy/bootstrap.sh   # re-run is safe
+```
+
+The daemon starts attacking the moment the key is set. Monitor cost via the status URL (`https://redteam-142-93-242-40.nip.io`) or:
+
+```bash
+docker compose -f /opt/redteam/docker-compose.yml logs -f redteam-daemon
+```
+
+### Operational commands
+
+| Action | Command |
+|---|---|
+| Daemon logs | `docker compose -f /opt/redteam/docker-compose.yml logs -f redteam-daemon` |
+| Status logs | `docker compose -f /opt/redteam/docker-compose.yml logs -f redteam-status` |
+| Stop daemon (status stays up) | `docker compose -f /opt/redteam/docker-compose.yml stop redteam-daemon` |
+| Resume daemon | `docker compose -f /opt/redteam/docker-compose.yml start redteam-daemon` |
+| Update from main | `cd /opt/redteam/repo && git pull && sudo bash .deploy/bootstrap.sh` |
+| Smoke status URL | `curl -fsS https://redteam-142-93-242-40.nip.io/health` |
+
+### What deployment adds beyond local
+
+| Concern | Local-only state | Droplet-deployed state |
 |---|---|---|
-| Compute host | Local laptop / dev box | Long-lived host (droplet, VPS, k8s job) |
-| Process supervision | Manual `python -m ...` | systemd unit / Docker restart-policy |
-| Secret management | `.env` file on disk | Vault / SSM / cloud KV store |
-| Trigger source | Manual invocation | cron (time-based) + webhook (git-push regression) |
-| Artifact storage | Local filesystem under `evals/results/` | S3 / blob store with retention policy |
-| Failure alerting | stderr / exit code | Slack / PagerDuty hook on non-zero exit |
-| Cost guardrails | Per-run `MAX_SESSION_COST_USD` | Cloud budget alarms + per-day rollups |
-| Observability | Langfuse UI (if keys set) | Same + Grafana dashboards + per-run cost trends |
+| Public URL | None — local-only | `https://redteam-142-93-242-40.nip.io` |
+| Process supervision | Manual `python -m ...` | Docker `restart: always` (compose) |
+| Tunnel to target | Required (SSH `-L 8000`) | Not needed — Docker DNS (`agent:8000`) |
+| Secret management | `.env` in repo dir | `.env` in `/opt/redteam/` (mode 600, outside repo) |
+| Artifact persistence | Local filesystem | Bind-mounted `/opt/redteam/evals/` survives container restarts |
+| Cost cap | Per-invocation `--max-budget` | Persistent `MAX_SESSION_COST_USD` in `.env` |
+| TLS | None | Caddy auto-TLS via Let's Encrypt |
 
-These are out of MVP scope and documented in `ARCHITECTURE.md` §8 (cost + scale) as Phase 2/3 work. The cost analysis at Final (`docs/cost-analysis.md`) makes the architectural-changes-per-scale call for 100 / 1K / 10K / 100K test runs.
+### What deployment does NOT add (out of MVP scope)
+
+| Phase 3 concern | Why not at MVP |
+|---|---|
+| Process supervision beyond `restart: always` | systemd / k8s deferred — Docker restart-policy is good enough at this scale |
+| Secret management beyond `.env` | Vault / SSM is for multi-host or compliance-bound deployments |
+| Long-term artifact storage (S3) | Filesystem fine for 100s of runs; cost analysis at Final makes the call for 10K+ |
+| Failure alerting | Status URL is the surface for now; Slack/PagerDuty integration is Phase 3 |
+| Per-day cost rollups | `cost-ledger.json` per-run is enough at this scale |
+| Grafana dashboards | Cleo P5 static-HTML dashboard covers the trend-analytics gap for Final |
+
+ARCH §8 (cost + scale) and the cost analysis at Final (`docs/cost-analysis.md`) document the architectural-changes-per-scale call for 100 / 1K / 10K / 100K test runs.
 
 ---
 

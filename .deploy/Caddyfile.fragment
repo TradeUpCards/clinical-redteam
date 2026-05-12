@@ -1,0 +1,84 @@
+# Clinical Red Team Platform — Caddy fragment.
+#
+# This fragment adds a SECOND public hostname to the W2 AgentForge Caddy
+# config. It does NOT replace the existing target server block.
+#
+# Final shape of /opt/agentforge/Caddyfile after merge:
+#
+#   142-93-242-40.nip.io {            # W2 target (unchanged)
+#     reverse_proxy https://openemr:443 { ... }
+#   }
+#
+#   redteam-142-93-242-40.nip.io {    # this fragment (new)
+#     reverse_proxy redteam-status:8080
+#   }
+#
+# Caddy auto-provisions a TLS cert for the new hostname via nip.io →
+# Let's Encrypt on first request (same mechanism W2 already uses).
+#
+# Integration paths (bootstrap.sh picks ONE — see comments there):
+#   A) Append this fragment to /opt/agentforge/Caddyfile in place
+#      (atomic, idempotent via marker-line check).
+#   B) Use Caddy's `import` directive: drop this file at a known path
+#      and add `import /opt/redteam/Caddyfile.fragment` to the W2
+#      Caddyfile. Less invasive but still requires editing W2's file
+#      once.
+#
+# Either way, after the edit:
+#   docker compose -f /opt/agentforge/docker-compose.yml exec caddy \
+#     caddy reload --config /etc/caddy/Caddyfile
+
+# ============================================================
+# BEGIN clinical-redteam fragment — managed by .deploy/bootstrap.sh
+# DO NOT EDIT BY HAND — re-run bootstrap to regenerate this block
+# ============================================================
+redteam-142-93-242-40.nip.io {
+    # Status app is read-only — no special headers needed for HTTP
+    # method restriction (the Flask app itself ignores POST/PUT/DELETE).
+    # Caddy auto-TLS handles cert provisioning + renewal via Let's Encrypt.
+    reverse_proxy redteam-status:8080 {
+        # Pass through real client IP for log attribution. The status app
+        # doesn't currently log it but the upstream-aware audit trail
+        # is cheaper to enable up-front than to retrofit.
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Conservative timeouts — the status app is fast (filesystem
+        # reads only). Long timeouts here would let a slow client hold
+        # a Caddy worker open.
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 15s
+            read_timeout 30s
+        }
+    }
+
+    # Security headers. Status app surfaces only already-published
+    # artifacts so CSP can be tight without breaking functionality.
+    header {
+        # Inline styles in the index template require 'unsafe-inline'
+        # for style-src. No JS = no script-src exception needed.
+        Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        # Prevent iframe-embed by external sites — this URL is grader-
+        # facing, not embeddable.
+        X-Frame-Options "DENY"
+        # Caddy emits a Server header by default; strip it to reduce
+        # version-fingerprint surface.
+        -Server
+    }
+
+    # Caddy default log level is INFO; emit access logs in JSON for
+    # later analysis. Logs go to stdout (compose captures them).
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
+# ============================================================
+# END clinical-redteam fragment
+# ============================================================
