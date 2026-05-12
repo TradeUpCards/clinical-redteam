@@ -596,6 +596,80 @@ def test_resume_missing_cost_ledger_errors_cleanly(
     assert "cannot resume" in err
 
 
+# ---------------------------------------------------------------------------
+# A7: CLI polish
+# ---------------------------------------------------------------------------
+
+
+def test_version_flag_prints_and_exits_zero(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A7: --version is the standard ops-debug introspection. Exits 0
+    without touching env / daemon / .env."""
+    from clinical_redteam import __version__
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "clinical-redteam" in out
+    assert __version__ in out
+
+
+def test_list_categories_prints_inventory_and_exits_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A7: --list-categories prints which seeds are on disk per category.
+    Useful for CI / 'did Bram's seeds land yet' smoke.
+
+    Explicitly unsets RED_TEAM_TARGET_URL + patches load_dotenv to prove
+    the introspection path requires NEITHER a configured target NOR a
+    .env file — runs on a freshly-installed machine.
+    """
+    monkeypatch.setenv("EVALS_DIR", str(REPO_EVALS))
+    monkeypatch.delenv("RED_TEAM_TARGET_URL", raising=False)
+    monkeypatch.setattr("clinical_redteam.run.load_dotenv", lambda: None)
+    code = main(["--list-categories"])
+    assert code == 0
+    out = capsys.readouterr().out
+    # Repo's evals/seed/sensitive_information_disclosure/ has c7-paraphrased-leakage
+    assert "sensitive_information_disclosure" in out
+    assert "c7-paraphrased-leakage" in out
+    # The other categories may or may not have seeds yet (Bram's track).
+    # Confirm the lines appear regardless.
+    assert "prompt_injection" in out
+    assert "unbounded_consumption" in out
+
+
+def test_continuous_rejects_non_default_max_attacks(
+    env_with_target: dict[str, str], capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A7: --max-attacks is single-shot only. A non-default value in
+    continuous mode is operator confusion (they probably meant
+    --max-iterations); reject with exit 2 and a guiding error message."""
+    code = main([
+        "--continuous", "--max-attacks", "5",
+        "--halt-on-empty-categories",
+    ])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "single-shot only" in err
+    assert "--max-iterations" in err
+
+
+def test_continuous_default_max_attacks_does_not_trip_rejection(
+    env_with_target: dict[str, str],
+) -> None:
+    """The default --max-attacks=1 must NOT be rejected in continuous mode
+    (otherwise every continuous invocation would fail). Verifies the
+    rejection rule only fires for non-default values."""
+    with _patch_agents():
+        code = main([
+            "--continuous", "--max-iterations", "1",
+            "--halt-on-empty-categories",
+        ])
+    assert code == 0  # clean halt by max-iterations
+
+
 def test_help_does_not_crash(capsys: pytest.CaptureFixture[str]) -> None:
     parser = _build_parser()
     with pytest.raises(SystemExit) as exc_info:

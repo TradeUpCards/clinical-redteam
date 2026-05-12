@@ -37,6 +37,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from clinical_redteam import __version__ as _PACKAGE_VERSION
 from clinical_redteam.agents.documentation import DocumentationAgent
 from clinical_redteam.agents.judge import JudgeAgent
 from clinical_redteam.agents.orchestrator import (
@@ -88,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    # Introspection flags exit before any side-effects (no .env load, no
+    # logging config, no agent construction). Safe to invoke from CI /
+    # ops scripts that just want to confirm the install + seed layout.
+    if args.list_categories:
+        return _print_seeded_categories()
+
     load_dotenv()
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -97,6 +104,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.continuous:
         return _run_continuous(args)
     return _run_single_shot(args)
+
+
+def _print_seeded_categories() -> int:
+    """Print each MVP category and its resolved seed_id (or `<none>`)."""
+    evals_dir = Path(os.getenv("EVALS_DIR", "./evals"))
+    seed_root = evals_dir / "seed"
+    print(f"clinical-redteam {_PACKAGE_VERSION} — seed inventory at {seed_root}")
+    print()
+    for cat in (
+        "sensitive_information_disclosure",
+        "prompt_injection",
+        "unbounded_consumption",
+    ):
+        cat_dir = seed_root / cat
+        if not cat_dir.exists():
+            print(f"  {cat:40s} (no directory)")
+            continue
+        yamls = sorted(cat_dir.glob("*.yaml"))
+        if not yamls:
+            print(f"  {cat:40s} <none>")
+            continue
+        names = ", ".join(y.stem for y in yamls)
+        print(f"  {cat:40s} {names}")
+    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -118,6 +149,21 @@ def _build_parser() -> argparse.ArgumentParser:
             "\n"
             "  Continuous (bounded by iterations — useful for smoke tests):\n"
             "    python -m clinical_redteam.run --continuous --max-iterations 5\n"
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"clinical-redteam {_PACKAGE_VERSION}",
+        help="Print package version and exit.",
+    )
+    parser.add_argument(
+        "--list-categories",
+        action="store_true",
+        help=(
+            "Print available seed inventory (one line per MVP category, "
+            "showing each category's seed_ids on disk) and exit. Useful "
+            "for CI smoke / `did Bram's seeds land yet` checks."
         ),
     )
     parser.add_argument(
@@ -230,14 +276,26 @@ def _run_continuous(args: argparse.Namespace) -> int:
     if args.seed is not None:
         print(
             "ERROR: --seed is single-shot only. In continuous mode the "
-            "Orchestrator picks seeds per ARCH §3.6.1.",
+            "Orchestrator picks seeds per ARCH §3.6.1. Drop --seed, or run "
+            "without --continuous to attack the named seed once.",
             file=sys.stderr,
         )
         return 2
     if args.no_mutate:
         print(
-            "ERROR: --no-mutate is single-shot only. In continuous mode "
-            "mutation is automatically reduced at the soft cost-cap.",
+            "ERROR: --no-mutate is single-shot only (regression-replay "
+            "mode). In continuous mode mutation is automatically reduced "
+            "at the soft cost-cap. Drop --no-mutate, or use single-shot.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.max_attacks != 1:
+        # --max-attacks is the single-shot iteration bound; continuous uses
+        # --max-iterations. A non-default value here is operator confusion.
+        print(
+            f"ERROR: --max-attacks={args.max_attacks} is single-shot only. "
+            "In continuous mode use --max-iterations instead. (--max-attacks "
+            "defaults to 1 and is ignored when --continuous is set.)",
             file=sys.stderr,
         )
         return 2
@@ -350,9 +408,18 @@ def _run_continuous(args: argparse.Namespace) -> int:
             **config_overrides,
         )
 
+        # Operator preamble: one tight line so anyone tailing the log
+        # knows exactly what mode / cap / target / run-id they're observing.
         logger.info(
-            "starting continuous daemon: run=%s cap=$%.2f max_iter=%s",
-            run_id, cost_cap_usd, args.max_iterations,
+            "clinical-redteam %s continuous-mode: run=%s target=%s cap=$%.2f "
+            "max_iter=%s halt_on_empty_categories=%s resuming=%s",
+            _PACKAGE_VERSION,
+            run_id,
+            target_url,
+            cost_cap_usd,
+            args.max_iterations if args.max_iterations is not None else "unbounded",
+            args.halt_on_empty_categories,
+            resuming,
         )
         logger.info("results dir: %s", handle.run_dir)
 
