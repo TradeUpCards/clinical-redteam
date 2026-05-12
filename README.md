@@ -210,7 +210,8 @@ ClinicalRedTeam/
 │   └── results/<run-id>/                      Per-run artifacts (untracked by default; atomic-written)
 ├── docs/
 │   ├── cost-analysis.md                       Phase 2 deliverable
-│   ├── demo-script.md                         Phase 2 deliverable
+│   ├── presearch.html                         Pre-Search Decision Record (PRD App. pp. 13-15)
+│   ├── presearch-conversation.md              Pre-Search Decision Dialogue (PRD App. instruction)
 │   └── research/                              Pre-search synthesis + framework PDFs
 ├── .gitlab-ci.yml                             CI gate — fail-closed on regression (currently open in MR #14; lands when that MR merges)
 ├── .pre-commit-config.yaml                    Pre-commit hooks (currently open in MR #14)
