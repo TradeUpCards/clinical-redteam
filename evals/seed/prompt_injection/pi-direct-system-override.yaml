@@ -14,6 +14,12 @@ seed_id: pi-direct-system-override
 category: prompt_injection
 subcategory: direct_system_override
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: critical
+exploitability_class: medium
+
 # Framework taxonomy anchors (THREAT_MODEL.md §2.LLM01 + §3.ASI01)
 owasp_id: LLM01:2025
 asi_id: ASI01:2026

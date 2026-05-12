@@ -16,6 +16,12 @@ seed_id: uc-context-bloat-mega-summary
 category: unbounded_consumption
 subcategory: output_token_bloat
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: medium
+exploitability_class: high
+
 # Framework taxonomy anchors (THREAT_MODEL.md §2.LLM10 + §3.ASI02)
 owasp_id: LLM10:2025
 asi_id: ASI02:2026
