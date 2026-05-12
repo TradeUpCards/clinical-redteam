@@ -1,0 +1,99 @@
+name: ci
+
+# GitHub Actions CI gate for the Clinical Red Team Platform.
+#
+# This is the ACTUAL executing CI gate. The GitLab pipeline twin in
+# `.gitlab-ci.yml` is documented-but-not-executing (labs.gauntletai.com
+# provides no instance-shared Runners for student projects; AgentForge
+# hit the same wall in week 1 and chose the same fix). See the GitLab
+# YAML's header comment block for the full runner-provisioning note.
+#
+# The two gates mirror each other intentionally: same Python version
+# (3.12), same install (`pip install -e ".[dev]"` + pre-commit), same
+# steps (pre-commit run --all-files; pytest tests/). A commit that
+# passes locally via `pre-commit run --all-files` plus
+# `python -m pytest tests/` should pass this workflow.
+#
+# Cost: zero. The test suite is fully stubbed (no live target, no
+# OpenRouter calls, no Langfuse).
+#
+# What this catches:
+#   - Ruff lint + format regressions
+#   - pre-commit-hooks file hygiene (whitespace, YAML/TOML validity,
+#     large files, merge-conflict markers, private keys)
+#   - Full pytest suite (currently ~250+ tests) regressions
+#
+# What this does NOT catch (intentional):
+#   - Live-target tests (none today; `-m "not live_target"` filter
+#     future-proofs for Phase 2)
+#   - LLM-judge calibration drift (Phase 2)
+#   - Cost-projection regressions (Phase 2)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - 'crt/**'
+  # Allow manual re-runs from the Actions tab.
+  workflow_dispatch:
+
+# Cancel an in-flight run if a newer commit lands on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: pre-commit + pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Force UTF-8 so the Cyrillic homoglyphs in
+      # evals/seed/prompt_injection/pi-direct-unicode-obfuscated.yaml
+      # don't break stdout on the GitHub-runner default locale.
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          # pre-commit is installed here rather than via [dev] extras
+          # so requirements-dev.txt stays scoped to packages the test
+          # suite actually imports (Aria-territory boundary; see
+          # coordination/A6-requirements-dev-pre-commit-bram-to-aria.md).
+          pip install "pre-commit>=3.7.0"
+
+      - name: Run pre-commit (lint stage)
+        run: pre-commit run --all-files
+
+      - name: Run pytest (test stage)
+        run: python -m pytest tests/ -m "not live_target" --tb=short -v --junitxml=junit.xml
+
+      # Always upload junit results so failures are inspectable from
+      # the Actions UI even when the test step exits non-zero.
+      - name: Upload pytest junit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-junit-${{ github.run_id }}
+          path: junit.xml
+          retention-days: 14
+          if-no-files-found: ignore

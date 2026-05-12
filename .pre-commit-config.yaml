@@ -1,0 +1,52 @@
+# Pre-commit gate for the Clinical Red Team Platform.
+# Mirrors the gates GitLab CI enforces (.gitlab-ci.yml). Running locally
+# before push catches regressions cheaply.
+#
+# Install once per machine:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run on demand:
+#   pre-commit run --all-files
+#
+# Authorship: scaffolded per Aria's A6 coordination note
+# (.gauntlet/week3/coordination/A6-ci-test-commands-aria-to-bram.md);
+# Bram owns this file per the W3 file-ownership map.
+
+default_install_hook_types: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # Fast pytest tier. Current suite runs in <2s with stubbed agents.
+      # `-m "not live_target"` future-proofs for Phase 2 live-target
+      # tests; today no tests carry that marker so it's a no-op filter.
+      # When live tests land, register the marker in pyproject.toml
+      # `[tool.pytest.ini_options].markers` so `--strict-markers` is
+      # happy.
+      - id: pytest-fast
+        name: pytest fast tier (full suite, no live target)
+        entry: python -m pytest tests/ -m "not live_target" --tb=short -q
+        language: system
+        pass_filenames: false
+        types_or: [python, yaml]
