@@ -711,7 +711,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
       <tbody id="tbody-1a">
 
         <tr class="item-row" data-id="1a-1" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-1" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-1" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">1</td>
           <td class="title">Verify git state; first commit of existing docs</td>
           <td class="where">repo root</td>
@@ -721,7 +721,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-2" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-2" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-2" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">2</td>
           <td class="title">Create GitLab repo + dual-push remote (per W2 pattern)</td>
           <td class="where">GitLab + GitHub</td>
@@ -731,7 +731,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-3" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-3" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-3" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">3</td>
           <td class="title">Python project scaffold: <code>pyproject.toml</code>, <code>requirements.txt</code>, <code>src/clinical_redteam/__init__.py</code></td>
           <td class="where">repo root + <code>src/</code></td>
@@ -741,7 +741,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-4" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-4" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-4" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">4</td>
           <td class="title"><code>.env.example</code> with all env vars (OPENROUTER_API_KEY, RED_TEAM_TARGET_URL, HMAC_SECRET, LANGFUSE_*, MAX_SESSION_COST_USD, etc.)</td>
           <td class="where">repo root</td>
@@ -761,7 +761,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-6" data-phase="phase-1a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1a-6" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-6" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">6</td>
           <td class="title">Pydantic schemas: AttackCandidate, JudgeVerdict, CoverageState, VulnerabilityReport, RegressionCase, AgentTrace per ARCH §12 <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>src/clinical_redteam/schemas.py</code></td>
@@ -771,7 +771,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-7" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-7" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-7" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">7</td>
           <td class="title">OpenRouter client wrapper with model fallback chain + cost tracking + Langfuse instrumentation</td>
           <td class="where"><code>src/clinical_redteam/openrouter.py</code></td>
@@ -781,7 +781,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-8" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-8" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-8" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">8</td>
           <td class="title">HMAC-signed target client (POST <code>/chat</code>, <code>/attach_and_extract</code>) with circuit breaker + backoff</td>
           <td class="where"><code>src/clinical_redteam/target_client.py</code></td>
@@ -791,7 +791,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-9" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-9" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-9" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">9</td>
           <td class="title">Filesystem persistence layer (atomic writes, <code>evals/results/&lt;run-id&gt;/manifest.json</code> schema)</td>
           <td class="where"><code>src/clinical_redteam/persistence.py</code></td>
@@ -801,7 +801,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-10" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-10" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-10" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">10</td>
           <td class="title">Hard content category filter (pre-flight on every AttackCandidate per ARCH §2.1 table)</td>
           <td class="where"><code>src/clinical_redteam/content_filter.py</code></td>
@@ -811,7 +811,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-11" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-11" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-11" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">11</td>
           <td class="title">Cost ledger + coverage state writers</td>
           <td class="where"><code>src/clinical_redteam/cost_ledger.py</code>, <code>coverage.py</code></td>
@@ -821,7 +821,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-12" data-phase="phase-1a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1a-12" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-12" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">12</td>
           <td class="title">Langfuse client wrapper (per-agent spans, no PHI in logs)</td>
           <td class="where"><code>src/clinical_redteam/observability.py</code></td>
@@ -831,7 +831,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-13" data-phase="phase-1a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1a-13" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-13" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">13</td>
           <td class="title">First Red Team Agent: load 1 seed case for <code>sensitive_information_disclosure</code> (C-7 reproducer), mutate via OpenRouter, output AttackCandidate <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>agents/red_team.py</code> + <code>evals/seed/...</code></td>
@@ -841,7 +841,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-14" data-phase="phase-1a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1a-14" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-14" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">14</td>
           <td class="title">First Judge Agent: load 1 rubric, evaluate Red Team output + target response, render JudgeVerdict <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>src/clinical_redteam/agents/judge.py</code></td>
@@ -851,7 +851,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1a-15" data-phase="phase-1a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1a-15" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1a-15" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">15</td>
           <td class="title"><strong>First end-to-end attack script</strong> (Red Team &#8594; live target &#8594; Judge &#8594; persist) <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>src/clinical_redteam/run.py</code> (single-shot mode)</td>
@@ -898,7 +898,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
       <tbody id="tbody-1b-a">
 
         <tr class="item-row" data-id="1b-A1" data-phase="phase-1b-a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-A1" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A1" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A1</td>
           <td class="title">Documentation Agent: template-fill VulnerabilityReport from (AttackCandidate, target_response, JudgeVerdict) <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>src/clinical_redteam/agents/documentation.py</code></td>
@@ -908,7 +908,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-A2" data-phase="phase-1b-a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-A2" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A2" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A2</td>
           <td class="title">Orchestrator daemon: <code>while not halt:</code> loop with category selection per ARCH §3.6.1, halt conditions per ARCH §10.2 <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>src/clinical_redteam/agents/orchestrator.py</code></td>
@@ -918,7 +918,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-A3" data-phase="phase-1b-a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-A3" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A3" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A3</td>
           <td class="title">Continuous-mode CLI: <code>python -m clinical_redteam.run --continuous --max-budget 5.00 --halt-on-empty-categories</code></td>
           <td class="where"><code>src/clinical_redteam/run.py</code> (extend #15)</td>
@@ -928,7 +928,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-A4" data-phase="phase-1b-a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-A4" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A4" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A4</td>
           <td class="title">Resume-after-restart logic</td>
           <td class="where"><code>src/clinical_redteam/persistence.py</code> (extend #9)</td>
@@ -938,7 +938,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-A5" data-phase="phase-1b-a" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-A5" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A5" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A5</td>
           <td class="title">Smoke meta-tests: schema validation, Judge injection meta-test, mutation diversity meta-test, halt-condition unit tests <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>tests/</code></td>
@@ -948,7 +948,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-A6" data-phase="phase-1b-a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-A6" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A6" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A6</td>
           <td class="title">Pre-commit hook + extend <code>.gitlab-ci.yml</code> to Phase 2 (pytest + meta-tests, fail-closed on regression)</td>
           <td class="where"><code>.pre-commit-config.yaml</code> + <code>.gitlab-ci.yml</code></td>
@@ -958,7 +958,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-A7" data-phase="phase-1b-a" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-A7" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-A7" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">A7</td>
           <td class="title">Single-shot CLI option polish (docstrings + <code>--help</code> + error handling)</td>
           <td class="where"><code>src/clinical_redteam/run.py</code></td>
@@ -987,7 +987,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
       <tbody id="tbody-1b-b">
 
         <tr class="item-row" data-id="1b-B1" data-phase="phase-1b-b" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-B1" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B1" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B1</td>
           <td class="title">Seed cases YAML for <code>sensitive_information_disclosure</code> (4 more on top of C-7 = 5 total) <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>evals/seed/sensitive_information_disclosure/*.yaml</code></td>
@@ -997,7 +997,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-B2" data-phase="phase-1b-b" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-B2" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B2" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B2</td>
           <td class="title">Seed cases YAML for <code>prompt_injection</code> (5+; direct + document-based indirect; single-turn only per ARCH §9.4) <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>evals/seed/prompt_injection/*.yaml</code></td>
@@ -1007,7 +1007,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-B3" data-phase="phase-1b-b" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-B3" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B3" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B3</td>
           <td class="title">Seed cases YAML for <code>unbounded_consumption</code> (5+) <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>evals/seed/unbounded_consumption/*.yaml</code></td>
@@ -1017,7 +1017,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-B4" data-phase="phase-1b-b" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-B4" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B4" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B4</td>
           <td class="title">Judge criteria YAML for <code>prompt_injection</code></td>
           <td class="where"><code>evals/criteria/prompt_injection.yaml</code></td>
@@ -1027,7 +1027,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-B5" data-phase="phase-1b-b" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-B5" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B5" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B5</td>
           <td class="title">Judge criteria YAML for <code>unbounded_consumption</code></td>
           <td class="where"><code>evals/criteria/unbounded_consumption.yaml</code></td>
@@ -1037,7 +1037,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-B6" data-phase="phase-1b-b" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-B6" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B6" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B6</td>
           <td class="title">Run continuous-mode daemon for ~30 min against C-7 reproducer; confirm rediscovery <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where">run command (operational)</td>
@@ -1047,7 +1047,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
         </tr>
 
         <tr class="item-row" data-id="1b-B7" data-phase="phase-1b-b" data-hardgate="yes">
-          <td class="cb"><button class="status-btn" data-id="1b-B7" data-status="done" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-B7" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">B7</td>
           <td class="title"><strong>VULN-001:</strong> C-7 rediscovery vulnerability report (auto-drafted by Documentation Agent + human-reviewed) <span class="badge badge-hardgate">Hard Gate</span></td>
           <td class="where"><code>evals/vulnerabilities/VULN-001-cross-patient-paraphrased-leakage.md</code></td>
@@ -1076,7 +1076,7 @@ nothing else can be parallelized. This is solo Tate work in Phase 1a.</pre>
       <tbody id="tbody-1b-c">
 
         <tr class="item-row" data-id="1b-C1" data-phase="phase-1b-c" data-hardgate="">
-          <td class="cb"><button class="status-btn" data-id="1b-C1" data-status="not-started" title="Click to cycle status">&#9744;</button></td>
+          <td class="cb"><button class="status-btn" data-id="1b-C1" data-status="done" title="Click to cycle status">&#10003;</button></td>
           <td class="num">C1</td>
           <td class="title">README MVP-state update: real run command, real env var list, real Langfuse project link</td>
           <td class="where"><code>README.md</code></td>
