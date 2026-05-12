@@ -48,7 +48,7 @@ from clinical_redteam.agents.red_team import (
 from clinical_redteam.cost_ledger import CostLedger
 from clinical_redteam.coverage import CoverageTracker
 from clinical_redteam.observability import Observability
-from clinical_redteam.persistence import start_run
+from clinical_redteam.persistence import resume_run, start_run
 from clinical_redteam.schemas import (
     AttackCandidate,
     Evidence,
@@ -136,7 +136,9 @@ class _FakeRedTeam:
                  sequence: int, mutate: bool) -> AttackCandidate:
         if self.raise_on_call is not None:
             raise self.raise_on_call
-        self.sequence += 1
+        # Honor the caller-supplied sequence so daemon-driven runs and
+        # resumed runs get distinct attack_ids even across restarts.
+        self.sequence = max(self.sequence + 1, sequence)
         if self.refuse_after is not None and self.sequence > self.refuse_after:
             raise AttackRefusedError(
                 reason="fake_refusal", label=None, matched_text=None
@@ -153,7 +155,9 @@ class _FakeJudge:
 
     def evaluate(self, *, attack: AttackCandidate, target_response_text: str,
                  sequence: int, evals_dir: Path) -> JudgeVerdict:
-        self.sequence += 1
+        # Honor caller-supplied sequence so resumed daemons emit distinct
+        # verdict_ids even when the fake's internal counter starts at 0.
+        self.sequence = max(self.sequence + 1, sequence)
         if self.verdicts:
             state, cost = self.verdicts[(self.sequence - 1) % len(self.verdicts)]
         else:
@@ -898,6 +902,98 @@ def test_no_seeded_categories_halts_cleanly(tmp_path: Path) -> None:
     )
     assert sel.category is None
     assert sel.rule == "no_seeded_categories_remain"
+
+
+# ---------------------------------------------------------------------------
+# A4: resume-after-restart — signal_window rehydration from disk
+# ---------------------------------------------------------------------------
+
+
+def test_resumed_daemon_rehydrates_signal_window_from_disk(tmp_path: Path) -> None:
+    """Build a daemon, run 3 iterations (writing verdicts), abandon it,
+    build a NEW daemon against the SAME run-dir. The fresh daemon should
+    have a non-empty signal window populated from the persisted verdicts.
+    """
+    # First daemon — runs 3 iterations
+    judge1 = _FakeJudge(verdicts=[("fail", 0.005), ("pass", 0.005), ("fail", 0.005)])
+    daemon1 = _build_daemon(tmp_path, judge=judge1)
+    daemon1.run_until_halt(max_iterations=3)
+    assert daemon1.signal_window.attempts == 3
+
+    # SECOND daemon — same run-dir; should rehydrate signal_window from disk
+    # without running any iterations.
+    handle = resume_run(run_id="testrun-001", results_dir=tmp_path / "results")
+    ledger = CostLedger.load(run_dir=handle.run_dir)
+    coverage = CoverageTracker.load(run_dir=handle.run_dir)
+    obs = Observability.from_env(session_id="testrun-001", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+        recent_k=10,
+    )
+    daemon2 = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=_FakeTarget(),
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle,
+        obs=obs,
+        config=config,
+        session_id="testrun-001",
+    )
+    # Rehydrated from the 3 prior verdicts
+    assert daemon2.signal_window.attempts == 3
+    # And the prior cost/coverage state is preserved (via *.load)
+    assert daemon2.ledger.total_usd == pytest.approx(daemon1.ledger.total_usd)
+    assert (
+        daemon2.coverage.to_state(session_cost_usd=0.0)
+        .categories["sensitive_information_disclosure"]
+        .attack_count
+        == 3
+    )
+
+
+def test_resumed_daemon_continues_attack_id_sequence(tmp_path: Path) -> None:
+    """`_next_sequence` reads manifest['attack_ids'] — so a resumed daemon's
+    next attack gets the correct sequence number across restart."""
+    daemon1 = _build_daemon(tmp_path)
+    daemon1.run_until_halt(max_iterations=2)
+
+    # Re-attach (resume) and run one more iteration. The next attack should
+    # be sequence=3 → atk_*_003.
+    handle = resume_run(run_id="testrun-001", results_dir=tmp_path / "results")
+    ledger = CostLedger.load(run_dir=handle.run_dir)
+    coverage = CoverageTracker.load(run_dir=handle.run_dir)
+    obs = Observability.from_env(session_id="testrun-001", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon2 = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=_FakeTarget(),
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle,
+        obs=obs,
+        config=config,
+        session_id="testrun-001",
+    )
+    assert daemon2._next_sequence() == 3
+    daemon2.run_until_halt(max_iterations=1)
+
+    attack_files = sorted((handle.run_dir / "attacks").glob("*.json"))
+    assert len(attack_files) == 3
+    # Last attack file is sequence 003
+    assert attack_files[-1].stem.endswith("_003")
 
 
 def test_default_seeds_mapping_matches_run_module() -> None:

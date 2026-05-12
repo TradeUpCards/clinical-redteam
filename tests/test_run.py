@@ -101,7 +101,9 @@ class _FakeRedTeam:
         return cls()
 
     def generate(self, **kw: Any) -> AttackCandidate:
-        self.sequence += 1
+        # Honor caller-supplied sequence so daemon resume yields fresh IDs.
+        called_seq = kw.get("sequence", self.sequence + 1)
+        self.sequence = max(self.sequence + 1, called_seq)
         return _make_attack(self.sequence)
 
 
@@ -114,7 +116,8 @@ class _FakeJudge:
         return cls()
 
     def evaluate(self, *, attack: AttackCandidate, **kw: Any) -> JudgeVerdict:
-        self.sequence += 1
+        called_seq = kw.get("sequence", self.sequence + 1)
+        self.sequence = max(self.sequence + 1, called_seq)
         return _make_verdict(self.sequence, attack.attack_id)
 
 
@@ -442,6 +445,155 @@ def test_default_seeds_re_export_matches_orchestrator() -> None:
 # ---------------------------------------------------------------------------
 # Help / usage smoke
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# A4: resume-after-restart from the CLI
+# ---------------------------------------------------------------------------
+
+
+def test_continuous_resume_picks_up_existing_run_dir(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """Phase 1: run the daemon to write artifacts to disk.
+    Phase 2: invoke main() AGAIN with the same --run-id; the second call
+    must NOT overwrite — it must resume and add more artifacts.
+    """
+    run_id = "resume-test-001"
+    # Phase 1 — initial run
+    with _patch_agents():
+        code1 = main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "2", "--halt-on-empty-categories",
+        ])
+    assert code1 == 0
+    run_dir = tmp_path / "results" / run_id
+    attacks_before = sorted((run_dir / "attacks").glob("*.json"))
+    assert len(attacks_before) == 2
+
+    # Phase 2 — resume with the same run-id
+    with _patch_agents():
+        code2 = main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+    assert code2 == 0
+    attacks_after = sorted((run_dir / "attacks").glob("*.json"))
+    # Three total attacks across the two sessions
+    assert len(attacks_after) == 3
+    # The third attack must have sequence 3 in its filename
+    assert attacks_after[-1].stem.endswith("_003")
+
+
+def test_continuous_resume_preserves_cost_ledger(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """The cost ledger must be reloaded on resume, not zeroed."""
+    run_id = "resume-test-002"
+    with _patch_agents():
+        main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "2", "--halt-on-empty-categories",
+        ])
+
+    # Read the ledger from disk between sessions
+    from clinical_redteam.cost_ledger import CostLedger
+    run_dir = tmp_path / "results" / run_id
+    ledger_phase1 = CostLedger.load(run_dir=run_dir)
+    cost_after_phase1 = ledger_phase1.total_usd
+    assert cost_after_phase1 > 0
+
+    with _patch_agents():
+        main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+
+    ledger_phase2 = CostLedger.load(run_dir=run_dir)
+    # Cost from phase 2 ADDS to phase 1's cost — not replaces.
+    assert ledger_phase2.total_usd > cost_after_phase1
+
+
+def test_resume_rejects_target_url_mismatch(
+    env_with_target: dict[str, str], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Audit MEDIUM-2: a resumed run against a different target than the
+    one stored in its manifest must error out cleanly, not silently corrupt
+    the regression-replay model with mixed-target artifacts.
+    """
+    run_id = "resume-mismatch-001"
+    # Phase 1: create the run with the original target
+    with _patch_agents():
+        main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+
+    # Phase 2: try to resume with a DIFFERENT target URL
+    monkeypatch.setenv("RED_TEAM_TARGET_URL", "http://different-host:8000")
+    with _patch_agents():
+        code = main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "Resuming across targets is not allowed" in err
+
+
+def test_resume_max_budget_override_warns(
+    env_with_target: dict[str, str], tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Audit MEDIUM-2 (cost cap): on resume, the on-disk ledger cap wins.
+    If --max-budget on resume differs from the persisted cap, the user must
+    get a WARN that their flag was ignored.
+    """
+    run_id = "resume-budget-001"
+    with _patch_agents():
+        # Phase 1 sets cap to 5.0 (the env_with_target fixture's default)
+        main([
+            "--continuous", "--run-id", run_id, "--max-budget", "5.00",
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+
+    with _patch_agents():
+        # Phase 2 attempts to raise the cap to 10.0 — should be ignored + warned
+        main([
+            "--continuous", "--run-id", run_id, "--max-budget", "10.00",
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+    err = capsys.readouterr().err
+    assert "ignored on resume" in err
+
+
+def test_resume_missing_cost_ledger_errors_cleanly(
+    env_with_target: dict[str, str], tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Audit MEDIUM-3: if cost-ledger.json is missing on resume, surface a
+    clean error instead of a Python traceback at exit code 1.
+    """
+    run_id = "resume-corrupt-001"
+    with _patch_agents():
+        main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+
+    # Delete the ledger to simulate operator removal / corruption
+    run_dir = tmp_path / "results" / run_id
+    (run_dir / "cost-ledger.json").unlink()
+
+    with _patch_agents():
+        code = main([
+            "--continuous", "--run-id", run_id,
+            "--max-iterations", "1", "--halt-on-empty-categories",
+        ])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "cannot resume" in err
 
 
 def test_help_does_not_crash(capsys: pytest.CaptureFixture[str]) -> None:

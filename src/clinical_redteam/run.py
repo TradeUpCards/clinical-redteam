@@ -59,10 +59,10 @@ from clinical_redteam.agents.red_team import (
     RedTeamAgent,
     load_seed,
 )
-from clinical_redteam.cost_ledger import CostLedger
-from clinical_redteam.coverage import CoverageTracker
+from clinical_redteam.cost_ledger import CostLedger, CostLedgerError
+from clinical_redteam.coverage import CoverageError, CoverageTracker
 from clinical_redteam.observability import Observability
-from clinical_redteam.persistence import start_run
+from clinical_redteam.persistence import PersistenceError, resume_run, start_run
 from clinical_redteam.schemas import Category
 from clinical_redteam.target_client import (
     HmacRejectedError,
@@ -262,21 +262,74 @@ def _run_continuous(args: argparse.Namespace) -> int:
         )
         return 2
 
-    handle = start_run(
-        run_id=run_id,
-        results_dir=results_dir,
-        target_url=target_url,
-        extra_metadata={
-            "cli": "phase_1b_a3_continuous",
-            "halt_on_empty_categories": args.halt_on_empty_categories,
-        },
-    )
-    ledger = CostLedger.create(run_dir=handle.run_dir, cost_cap_usd=cost_cap_usd)
-    coverage = CoverageTracker.create(
-        run_dir=handle.run_dir,
-        target_version_sha="unknown",  # Phase 2 reads /version from target
-        cost_cap_usd=cost_cap_usd,
-    )
+    # A4: resume-after-restart. If the run-id directory already has a
+    # manifest.json, treat this invocation as a resume — re-attach to the
+    # existing on-disk run instead of creating fresh artifacts.
+    resuming = (results_dir / run_id / "manifest.json").exists()
+    if resuming:
+        try:
+            handle, ledger, coverage = _resume_run_artifacts(
+                run_id=run_id, results_dir=results_dir
+            )
+        except (PersistenceError, CostLedgerError, CoverageError) as exc:
+            # Audit MEDIUM-3: surface a clean error instead of a traceback
+            # when on-disk artifacts are missing or schema-incompatible.
+            print(
+                f"ERROR: cannot resume run {run_id!r}: {exc}. "
+                "Inspect the run directory or use a different --run-id.",
+                file=sys.stderr,
+            )
+            return 2
+
+        # Audit MEDIUM-2: refuse to resume against a different target than
+        # the one that produced the prior artifacts. Cross-target attacks
+        # in the same run-dir would corrupt the regression-replay model.
+        manifest = handle.load_manifest()
+        prior_target_url = manifest.get("target_url")
+        if prior_target_url and prior_target_url != target_url:
+            print(
+                f"ERROR: --run-id {run_id!r} was created against target "
+                f"{prior_target_url!r}; this invocation is configured for "
+                f"{target_url!r}. Resuming across targets is not allowed. "
+                "Use a fresh --run-id or align RED_TEAM_TARGET_URL.",
+                file=sys.stderr,
+            )
+            return 2
+
+        # Audit MEDIUM-2 (cost cap): the on-disk ledger cap wins on resume.
+        # If the operator passed --max-budget thinking they'd override, warn
+        # so they know the original cap is still in force.
+        if args.max_budget is not None and abs(
+            ledger.cost_cap_usd - args.max_budget
+        ) > 1e-9:
+            print(
+                f"WARN: --max-budget {args.max_budget:.4f} ignored on resume; "
+                f"prior on-disk cap ${ledger.cost_cap_usd:.4f} is in force. "
+                "Cost-cap bypass via restart is explicitly prevented.",
+                file=sys.stderr,
+            )
+
+        logger.info(
+            "resuming run=%s — %d prior attacks, $%.4f prior cost",
+            run_id, len(manifest.get("attack_ids", [])),
+            ledger.total_usd,
+        )
+    else:
+        handle = start_run(
+            run_id=run_id,
+            results_dir=results_dir,
+            target_url=target_url,
+            extra_metadata={
+                "cli": "phase_1b_a3_continuous",
+                "halt_on_empty_categories": args.halt_on_empty_categories,
+            },
+        )
+        ledger = CostLedger.create(run_dir=handle.run_dir, cost_cap_usd=cost_cap_usd)
+        coverage = CoverageTracker.create(
+            run_dir=handle.run_dir,
+            target_version_sha="unknown",  # Phase 2 reads /version from target
+            cost_cap_usd=cost_cap_usd,
+        )
     obs = Observability.from_env(session_id=run_id)
     # Audit MEDIUM-1: ensure obs buffer drains even if daemon CONSTRUCTION
     # raises (e.g., RedTeamAgent.from_env() raising on missing OpenRouter
@@ -321,6 +374,24 @@ def _run_continuous(args: argparse.Namespace) -> int:
         return _exit_code_for_halt(report.reason)
     finally:
         obs.flush()
+
+
+def _resume_run_artifacts(
+    *, run_id: str, results_dir: Path
+) -> tuple[Any, CostLedger, CoverageTracker]:
+    """A4: re-attach to an existing on-disk run.
+
+    Returns (handle, ledger, coverage). Caller is responsible for noting
+    the resume in logs and proceeding as normal — the orchestrator's
+    `__post_init__` rehydrates `signal_window` from the verdicts dir.
+
+    Raises PersistenceError / CostLedgerError / CoverageError if the
+    on-disk artifacts are missing or schema-incompatible.
+    """
+    handle = resume_run(run_id=run_id, results_dir=results_dir)
+    ledger = CostLedger.load(run_dir=handle.run_dir)
+    coverage = CoverageTracker.load(run_dir=handle.run_dir)
+    return handle, ledger, coverage
 
 
 def _stdout_iteration_emitter(line: dict[str, Any]) -> None:
