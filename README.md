@@ -40,7 +40,6 @@ The system is built around three established frameworks rather than invented tax
 | **GitHub mirror** | https://github.com/TradeUpCards/clinical-redteam |
 | **Architecture** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) — multi-agent platform design + agent interaction diagram |
 | **Threat model** | [`THREAT_MODEL.md`](./THREAT_MODEL.md) — attack surface map, OWASP coverage, prioritization |
-| **Build plan + status** | [`docs/MVP-WORK-PLAN.html`](./docs/MVP-WORK-PLAN.html) — interactive checklist with item-level status |
 | **Eval suite** | [`evals/seed/`](./evals/seed/) + [`evals/criteria/`](./evals/criteria/) — adversarial seed cases + Judge criteria YAMLs, across 3 attack categories |
 | **Vulnerability reports** | [`evals/vulnerabilities/`](./evals/vulnerabilities/) — confirmed exploits in structured report format (VULN-001 ships Tue MVP; VULN-002 / VULN-003 ship by Fri Final) |
 | **Demo video (Final submission)** | *Final-submission video link added on final commit* |
@@ -210,10 +209,6 @@ ClinicalRedTeam/
 │   ├── vulnerabilities/VULN-<NNN>.md          Confirmed-exploit reports (Phase 2 build)
 │   └── results/<run-id>/                      Per-run artifacts (untracked by default; atomic-written)
 ├── docs/
-│   ├── MVP-WORK-PLAN.{md,html}                Sequenced build roadmap + interactive checklist
-│   ├── PRD-REQUIREMENTS.html                  73 PRD requirements + 5 hard gates tracker
-│   ├── W3-LEAD-PLAN.html                      Phase-by-phase work breakdown by team lead
-│   ├── AGENT-COORDINATION-GUIDE.html          When + how to parallelize team-lead sessions (currently open in MR #16; lands when that MR merges)
 │   ├── cost-analysis.md                       Phase 2 deliverable
 │   ├── demo-script.md                         Phase 2 deliverable
 │   └── research/                              Pre-search synthesis + framework PDFs
@@ -226,8 +221,6 @@ ClinicalRedTeam/
 ---
 
 ## Status
-
-For granular item-by-item state, see [`docs/MVP-WORK-PLAN.html`](./docs/MVP-WORK-PLAN.html) (interactive). High-level:
 
 **Phase 1a — Foundation modules** ✓ *(complete 2026-05-12)*
 - ✓ Pydantic inter-agent contract schemas (ARCH §12; 6 models, round-trip-validated)
