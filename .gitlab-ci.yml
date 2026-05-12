@@ -1,0 +1,54 @@
+# GitLab CI gate for the Clinical Red Team Platform.
+# Mirrors the gates pre-commit enforces locally (.pre-commit-config.yaml)
+# so any commit that's green on a dev machine is green in CI.
+#
+# Project: labs.gauntletai.com/coryvandenberg/clinical-redteam
+# Pipeline must be green before MR auto-merge fires.
+#
+# Authorship: scaffolded per Aria's A6 coordination note
+# (.gauntlet/week3/coordination/A6-ci-test-commands-aria-to-bram.md);
+# Bram owns this file per the W3 file-ownership map.
+
+image: python:3.12-slim
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PYTHONUNBUFFERED: "1"
+  # Force UTF-8 for any stdout that prints non-ASCII (e.g., the Cyrillic
+  # homoglyphs in evals/seed/prompt_injection/pi-direct-unicode-obfuscated).
+  PYTHONIOENCODING: "utf-8"
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .cache/pip
+
+stages:
+  - lint
+  - test
+
+before_script:
+  - python -m venv .venv
+  - source .venv/bin/activate
+  - pip install -U pip
+  - pip install -e ".[dev]"
+
+lint:
+  stage: lint
+  script:
+    - pre-commit run --all-files
+
+test:
+  stage: test
+  script:
+    - python -m pytest tests/ --tb=short -v --junitxml=junit.xml
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+    paths:
+      # Capture run artifacts if any test happens to leave them (none today,
+      # but Phase 2 may add tests that materialize evals/results/ samples).
+      - evals/results/
+      - junit.xml
+    expire_in: 1 week
