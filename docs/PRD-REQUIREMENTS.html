@@ -548,7 +548,7 @@
       <div class="hg-text">Your deployed target application URL must be submitted with every checkpoint. The adversarial platform must be running tests against a live system, not just a mock.</div>
       <div class="hg-meta">PRD p. 7 | Stage 1 "Stand Up the Target" | Applies: MVP &amp; Final (both checkpoints)</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">URL exists (142-93-242-40.nip.io); must be live + tested at submission</span></div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">Target live + tested via SSH tunnel; B6 runs verified end-to-end HMAC-signed POST /chat. URL submission with MVP checkpoint pending</span></div>
   </div>
 
   <!-- HG2 -->
@@ -559,18 +559,18 @@
       <div class="hg-text">A markdown document (./THREAT_MODEL.md) with your full attack surface map. The document must begin with a ~500 word summary of your key findings, the highest-risk attack categories, and how your platform will prioritize coverage.</div>
       <div class="hg-meta">PRD p. 7 | Stage 2 "Map the Attack Surface" | Applies: MVP</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File exists — verify summary is ~500w and all 6 attack categories mapped</span></div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File on main with full attack-surface map + OWASP/ATLAS/NIST anchoring. Tate verify summary length at session-end sweep</span></div>
   </div>
 
   <!-- HG3 -->
   <div class="hg-item">
-    <input type="checkbox" id="hg3">
+    <input type="checkbox" id="hg3" checked>
     <div class="hg-content">
       <h3>HG-3 — Working evals/ suite (3+ attack categories) + one live agent role (Stage 3)</h3>
       <div class="hg-text">A working test suite (./evals/) with results from at least three distinct attack categories, plus a working prototype of at least one agent role (Red Team, Judge, or Orchestrator) running live against the deployed target.</div>
       <div class="hg-meta">PRD p. 8 | Stage 3 "Build Initial Attack Suite" | Applies: MVP</div>
     </div>
-    <div class="hg-status"><span class="badge badge-notstarted">&#9744; not-started</span><br><span style="font-size:11px; color:#9b2c2c;">evals/ directory is empty — highest priority build item</span></div>
+    <div class="hg-status"><span class="badge badge-done">&#10003; done</span><br><span style="font-size:11px; color:#065f46;">17 seeds across 3 categories on main; B6 v1+v2 ran live producing 40+ verdicts; Red Team + Judge + Documentation + Orchestrator all running end-to-end against deployed target</span></div>
   </div>
 
   <!-- HG4 -->
@@ -581,18 +581,18 @@
       <div class="hg-text">A markdown document (./ARCHITECTURE.md) defining your multi-agent platform architecture. The document must begin with a ~500 word summary and must explicitly name each agent, its role, and how it fits into the overall system. A diagram of agent interactions is strongly recommended.</div>
       <div class="hg-meta">PRD p. 8 | Stage 4 "Plan the Platform Architecture" | Applies: MVP</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File exists — verify diagram is present or noted as recommended</span></div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">ARCHITECTURE.md has 4 agents defined in §2 with trust levels + I/O contracts. ASCII system diagram in §1. Tate verify ~500w summary at session-end sweep</span></div>
   </div>
 
   <!-- HG5 / ARCH REQ -->
   <div class="hg-item">
-    <input type="checkbox" id="hg5">
+    <input type="checkbox" id="hg5" checked>
     <div class="hg-content">
       <h3>HG-5 — ARCHITECTURE REQUIREMENT: True multi-agent system (not single-agent or pipeline)</h3>
       <div class="hg-text">A single-agent or pipeline architecture does not satisfy this assignment. Each role below represents a distinct agent with its own responsibilities, context, and decision-making authority. Your ARCHITECTURE.md must define each agent, its inputs and outputs, its trust level, and how it coordinates with the others.</div>
       <div class="hg-meta">PRD p. 9 | "Platform Requirements" / "Architecture Requirement" callout | Applies: Both (graded at every checkpoint)</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">Architecture doc names 4 agents — must verify each has distinct context + trust level documented</span></div>
+    <div class="hg-status"><span class="badge badge-done">&#10003; done</span><br><span style="font-size:11px; color:#065f46;">4 agents implemented + tested on main: red_team.py, judge.py, orchestrator.py, documentation.py. Each with distinct trust level + ARCH §2.x definition + Pydantic schema contracts + audit-each-step passing</span></div>
   </div>
 </div>
 
