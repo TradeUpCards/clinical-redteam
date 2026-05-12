@@ -23,3 +23,9 @@ python-dotenv>=1.0.0
 
 # Observability — per-agent spans, PHI scrubber (ARCH §9.1, presearch.html §10)
 langfuse>=2.40.0
+
+# Read-only status surface for the deployed attacker
+# (clinical_redteam.web.status_app — see SETUP.md §9). Used both
+# locally (python -m clinical_redteam.web) and in the deployed Docker
+# container (gunicorn fronts it; see .deploy/Dockerfile).
+flask>=3.0.0
