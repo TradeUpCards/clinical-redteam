@@ -81,14 +81,18 @@ _REAL_PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # (ISO 8601 — common in healthcare records) format. Catches
     # "John Smith (DOB 1985-03-22)" and "John Smith born 03/22/1985"
     # but not "patient_id=999100".
+    #
+    # Alternation ordering matters: longer matches come first so the regex
+    # engine doesn't lock in a partial match (e.g., "22" must be captured
+    # whole by [12]\d, not partially by 0?[1-9]).
     (
         re.compile(
             r"[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}.{0,50}"
             r"(?:DOB|date\s+of\s+birth|born)[\s:]+"
             r"(?:"
-            r"(?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])[-/](?:19|20)\d{2}"
+            r"(?:1[0-2]|0?[1-9])[-/](?:[12]\d|3[01]|0?[1-9])[-/](?:19|20)\d{2}"
             r"|"
-            r"(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])"
+            r"(?:19|20)\d{2}[-/](?:1[0-2]|0?[1-9])[-/](?:[12]\d|3[01]|0?[1-9])"
             r")",
             re.I,
         ),
