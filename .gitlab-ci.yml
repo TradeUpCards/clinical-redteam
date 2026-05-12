@@ -32,6 +32,11 @@ before_script:
   - source .venv/bin/activate
   - pip install -U pip
   - pip install -e ".[dev]"
+  # pre-commit drives the `lint` stage below. Installed directly here
+  # rather than via `[dev]` extras to keep requirements-dev.txt scoped
+  # to packages the test suite actually imports (Aria-territory
+  # boundary; coordination note A6-requirements-dev-pre-commit-bram-to-aria.md).
+  - pip install "pre-commit>=3.7.0"
 
 lint:
   stage: lint
