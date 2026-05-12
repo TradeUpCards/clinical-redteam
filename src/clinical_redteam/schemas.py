@@ -11,8 +11,7 @@ a bug, not a refinement.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
@@ -68,8 +67,8 @@ class Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["single_turn", "multi_turn"]
-    content: Optional[str] = None
-    turns: Optional[list[Turn]] = None
+    content: str | None = None
+    turns: list[Turn] | None = None
 
 
 class AttackCandidate(BaseModel):
@@ -81,12 +80,12 @@ class AttackCandidate(BaseModel):
     category: Category
     subcategory: str
     owasp_id: str
-    asi_id: Optional[str] = None
-    atlas_technique_id: Optional[str] = None
+    asi_id: str | None = None
+    atlas_technique_id: str | None = None
     target_endpoint: str
     payload: Payload
     conversation_state: list[Turn] = Field(default_factory=list)
-    mutation_parent: Optional[str] = None
+    mutation_parent: str | None = None
     mutation_depth: int = Field(default=0, ge=0)
     generated_by: str
     generated_at: AwareDatetime
@@ -155,7 +154,7 @@ class CategoryCoverage(BaseModel):
 
     attack_count: int = Field(ge=0)
     verdicts: VerdictCounts
-    last_attack_at: Optional[AwareDatetime] = None
+    last_attack_at: AwareDatetime | None = None
     open_findings: int = Field(ge=0)
 
 
@@ -182,9 +181,9 @@ class HumanReview(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    reviewer: Optional[str] = None
-    reviewed_at: Optional[AwareDatetime] = None
-    decision: Optional[Literal["approved", "rejected", "needs_revision"]] = None
+    reviewer: str | None = None
+    reviewed_at: AwareDatetime | None = None
+    decision: Literal["approved", "rejected", "needs_revision"] | None = None
 
 
 class FixValidation(BaseModel):
@@ -193,7 +192,7 @@ class FixValidation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     regression_test_path: str
-    last_run_at: Optional[AwareDatetime] = None
+    last_run_at: AwareDatetime | None = None
     last_run_status: Literal["pending", "passed", "failed"] = "pending"
 
 
@@ -241,9 +240,9 @@ class RegressionCase(BaseModel):
     attack_payload: str
     expected_behavior: str
     discovered_target_version_sha: str
-    last_passed_target_version_sha: Optional[str] = None
-    last_failed_target_version_sha: Optional[str] = None
-    last_run_at: Optional[AwareDatetime] = None
+    last_passed_target_version_sha: str | None = None
+    last_failed_target_version_sha: str | None = None
+    last_run_at: AwareDatetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +259,8 @@ class AgentTrace(BaseModel):
     agent_version: str
     agent_role: str
     session_id: str = Field(pattern=r"^sess_\d{4}-\d{2}-\d{2}_\d{3,}$")
-    attack_id: Optional[str] = None
-    category: Optional[Category] = None
+    attack_id: str | None = None
+    category: Category | None = None
     model_used: str
     cost_usd: float = Field(ge=0)
     latency_ms: int = Field(ge=0)

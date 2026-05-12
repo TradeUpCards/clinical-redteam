@@ -23,7 +23,6 @@ from clinical_redteam.schemas import (
     VulnerabilityReportFrontmatter,
 )
 
-
 # ---------------------------------------------------------------------------
 # 12.1 AttackCandidate
 # ---------------------------------------------------------------------------
