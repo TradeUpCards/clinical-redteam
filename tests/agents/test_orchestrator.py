@@ -913,6 +913,11 @@ def test_resumed_daemon_rehydrates_signal_window_from_disk(tmp_path: Path) -> No
     """Build a daemon, run 3 iterations (writing verdicts), abandon it,
     build a NEW daemon against the SAME run-dir. The fresh daemon should
     have a non-empty signal window populated from the persisted verdicts.
+
+    Total-coverage check rather than per-category: now that Bram has
+    seeded PI + UC, the daemon's category-selection distributes attacks
+    across seeded categories. The load-bearing invariant is that the
+    SUM of attacks across categories matches the run length.
     """
     # First daemon — runs 3 iterations
     judge1 = _FakeJudge(verdicts=[("fail", 0.005), ("pass", 0.005), ("fail", 0.005)])
@@ -949,12 +954,10 @@ def test_resumed_daemon_rehydrates_signal_window_from_disk(tmp_path: Path) -> No
     assert daemon2.signal_window.attempts == 3
     # And the prior cost/coverage state is preserved (via *.load)
     assert daemon2.ledger.total_usd == pytest.approx(daemon1.ledger.total_usd)
-    assert (
-        daemon2.coverage.to_state(session_cost_usd=0.0)
-        .categories["sensitive_information_disclosure"]
-        .attack_count
-        == 3
-    )
+    # Total attack count across all categories should equal the run length
+    state = daemon2.coverage.to_state(session_cost_usd=0.0)
+    total_attacks = sum(c.attack_count for c in state.categories.values())
+    assert total_attacks == 3
 
 
 def test_coverage_reconciled_from_disk_when_daemon_resumes(tmp_path: Path) -> None:
@@ -970,16 +973,20 @@ def test_coverage_reconciled_from_disk_when_daemon_resumes(tmp_path: Path) -> No
     """
     daemon1 = _build_daemon(tmp_path)
     daemon1.run_until_halt(max_iterations=2)
-    assert daemon1.coverage.to_state(
-        session_cost_usd=0.0
-    ).categories["sensitive_information_disclosure"].attack_count == 2
+    # Total across categories (PI/UC may also be hit now that Bram seeded them).
+    state1 = daemon1.coverage.to_state(session_cost_usd=0.0)
+    total_before = sum(c.attack_count for c in state1.categories.values())
+    sid_before = state1.categories["sensitive_information_disclosure"].attack_count
+    assert total_before == 2
 
     # Simulate the desync: write attack #3 + verdict #3 to disk WITHOUT
     # calling coverage.record_*. This mimics the failure mode where the
     # daemon was killed between save_verdict and the coverage update.
-    third_attack = _make_attack(3)
+    # _make_attack hardcodes category=SID, so the simulated 3rd verdict
+    # lands in SID's bucket on reconciliation.
+    third_attack = _make_attack(sid_before + 100)  # unique attack_id
     daemon1.handle.save_attack(third_attack)
-    third_verdict = _make_verdict(3, third_attack.attack_id, state="pass")
+    third_verdict = _make_verdict(sid_before + 100, third_attack.attack_id, state="pass")
     daemon1.handle.save_verdict(third_verdict)
 
     # Build daemon2 (resume). __post_init__ should reconcile.
@@ -1001,10 +1008,15 @@ def test_coverage_reconciled_from_disk_when_daemon_resumes(tmp_path: Path) -> No
         coverage=coverage, ledger=ledger, handle=handle, obs=obs,
         config=config, session_id="testrun-001",
     )
-    # Coverage reconciled — now reports 3 attacks (was 2 stale)
-    assert daemon2.coverage.to_state(
-        session_cost_usd=0.0
-    ).categories["sensitive_information_disclosure"].attack_count == 3
+    # Coverage reconciled: SID's count bumps by 1 (the manually-injected
+    # verdict goes into SID's bucket). Total across categories goes up by 1.
+    state2 = daemon2.coverage.to_state(session_cost_usd=0.0)
+    total_after = sum(c.attack_count for c in state2.categories.values())
+    assert total_after == total_before + 1
+    assert (
+        state2.categories["sensitive_information_disclosure"].attack_count
+        == sid_before + 1
+    )
 
 
 def test_resumed_daemon_continues_attack_id_sequence(tmp_path: Path) -> None:
