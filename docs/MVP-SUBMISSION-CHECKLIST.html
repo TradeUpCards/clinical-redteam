@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MVP Submission Checklist — Clinical Red Team Platform</title>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --surface: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --soft: #8a8a82;
+    --line: #e5e5e0;
+    --line-strong: #c8c8c0;
+    --code-bg: #f3f3ef;
+
+    --good: #15803d;
+    --good-bg: #ecfdf5;
+    --warn: #b45309;
+    --warn-bg: #fffbeb;
+    --bad: #b91c1c;
+    --bad-bg: #fef2f2;
+    --info: #1d4ed8;
+    --info-bg: #eff6ff;
+    --neutral: #6b6b6b;
+    --neutral-bg: #f3f3ef;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  code {
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 12.5px; background: var(--code-bg); padding: 1px 5px; border-radius: 3px;
+  }
+  a { color: var(--info); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .page { max-width: 1080px; margin: 0 auto; padding: 24px 22px 100px; }
+
+  header.banner {
+    padding-bottom: 14px; border-bottom: 2px solid var(--ink); margin-bottom: 22px;
+  }
+  header.banner h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  header.banner .sub { color: var(--muted); font-size: 13.5px; margin-top: 6px; }
+  header.banner .meta { color: var(--muted); font-size: 12px; margin-top: 10px;
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
+  header.banner .meta strong { color: var(--ink); }
+
+  h2 {
+    font-size: 17px; margin: 32px 0 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--line); font-weight: 600;
+  }
+  h2 .tag {
+    display: inline-block; padding: 2px 9px; border-radius: 11px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+    margin-left: 10px; vertical-align: middle;
+  }
+  h2 .tag.mvp { background: var(--ink); color: white; }
+  h2 .tag.final { background: var(--info); color: white; }
+  h2 .tag.continuous { background: var(--soft); color: white; }
+
+  /* checklist grid */
+  table.checklist {
+    width: 100%; border-collapse: collapse; margin: 4px 0 12px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+    overflow: hidden;
+  }
+  table.checklist th, table.checklist td {
+    padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line);
+    vertical-align: top; font-size: 14px;
+  }
+  table.checklist th {
+    background: var(--code-bg); font-weight: 600;
+    font-size: 11.5px; color: var(--soft);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  table.checklist tr:last-child td { border-bottom: none; }
+  table.checklist td.status { width: 90px; }
+  table.checklist td.req {
+    font-weight: 600; min-width: 200px;
+  }
+  table.checklist td.where {
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 12.5px; white-space: nowrap;
+  }
+  table.checklist td.evidence { color: var(--muted); font-size: 13px; }
+
+  .badge {
+    display: inline-block; padding: 3px 9px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .badge.done     { background: var(--good-bg); color: var(--good); }
+  .badge.progress { background: var(--warn-bg); color: var(--warn); }
+  .badge.blocked  { background: var(--bad-bg);  color: var(--bad);  }
+  .badge.deferred { background: var(--neutral-bg); color: var(--neutral); }
+  .badge.live     { background: var(--info-bg); color: var(--info); }
+
+  .box {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left-width: 4px; border-radius: 5px;
+    padding: 14px 18px; margin: 14px 0;
+  }
+  .box.summary { border-left-color: var(--ink); background: #fcfcf9; }
+  .box.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  .box.good { border-left-color: var(--good); background: var(--good-bg); }
+  .box p:first-child { margin-top: 0; }
+  .box p:last-child { margin-bottom: 0; }
+  .box ol, .box ul { margin: 8px 0; padding-left: 22px; }
+
+  /* "Right before submitting" steps */
+  .preflight {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+    padding: 14px 20px; margin: 14px 0;
+  }
+  .preflight ol { margin: 4px 0; padding-left: 22px; }
+  .preflight ol li { margin: 6px 0; }
+  .preflight code { font-size: 12.5px; }
+
+  /* count summary */
+  .counts {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px;
+  }
+  .count-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left-width: 4px; border-radius: 4px; padding: 10px 14px;
+  }
+  .count-card.done { border-left-color: var(--good); }
+  .count-card.progress { border-left-color: var(--warn); }
+  .count-card.blocked { border-left-color: var(--bad); }
+  .count-card.deferred { border-left-color: var(--neutral); }
+  .count-card .num { font-size: 22px; font-weight: 700; line-height: 1; }
+  .count-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 4px; }
+
+  @media (max-width: 720px) {
+    .counts { grid-template-columns: repeat(2, 1fr); }
+    table.checklist td.where { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="banner">
+  <h1>MVP Submission Checklist — Clinical Red Team Platform</h1>
+  <div class="sub">
+    The single-pane verification view. Scan in 30 seconds before clicking submit.
+    Each row maps to exactly what a grader will check.
+  </div>
+  <div class="meta">
+    <strong>MVP cutoff:</strong> Tuesday 2026-05-13 11:59 PM &nbsp;·&nbsp;
+    <strong>Final / Demo Day cutoff:</strong> Friday 2026-05-16 noon &nbsp;·&nbsp;
+    <strong>Last refresh:</strong> 2026-05-12 (Tate C1+C2 docs pass)
+  </div>
+</header>
+
+<!-- ====================================================== summary counts -->
+<div class="counts">
+  <div class="count-card done">
+    <div class="num" id="cnt-done">—</div>
+    <div class="label">Done</div>
+  </div>
+  <div class="count-card progress">
+    <div class="num" id="cnt-progress">—</div>
+    <div class="label">In progress</div>
+  </div>
+  <div class="count-card blocked">
+    <div class="num" id="cnt-blocked">—</div>
+    <div class="label">Blocked / missing</div>
+  </div>
+  <div class="count-card deferred">
+    <div class="num" id="cnt-deferred">—</div>
+    <div class="label">Final-only (not for MVP)</div>
+  </div>
+</div>
+
+<div class="box summary">
+  <strong>If everything below is green, you can submit MVP.</strong>
+  <p>Rows are ordered the way a grader would check them: hard gates first (HG-1 through HG-5), then the five MVP deliverables, then submission action. Final-only rows are listed at the bottom for context but are NOT required tonight.</p>
+</div>
+
+<!-- ====================================================== HARD GATES -->
+<h2>Hard Gates (MVP + Final) <span class="tag mvp">required tonight</span></h2>
+
+<table class="checklist">
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Requirement</th>
+      <th>Where</th>
+      <th>Evidence / verify</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">HG-1 — Deployed target URL accessible</td>
+      <td class="where">https://142-93-242-40.nip.io</td>
+      <td class="evidence">Open the URL in a browser; OpenEMR login page should render. Live during MVP runtime test (Co-Pilot is the system the platform attacks).</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">HG-2 — <code>THREAT_MODEL.md</code> with ~500-word summary</td>
+      <td class="where"><code>./THREAT_MODEL.md</code></td>
+      <td class="evidence">Open the file. First section is the ~500-word exec summary. Covers all 6 attack-category dimensions from PRD §Stage 2 (prompt injection, data exfiltration, state corruption, tool misuse, DoS, identity exploitation).</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">HG-3 — <code>evals/</code> with ≥3 attack categories + ≥1 agent role running live</td>
+      <td class="where"><code>./evals/seed/</code> + <code>./evals/results/</code></td>
+      <td class="evidence">17 seeds across SID/PI/UC. Run artifact <code>evals/results/20260512T134033-f7bfca/</code> = 30 attacks executed via daemon against live target (B6 v2). 4 agents wired end-to-end.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">HG-4 — <code>ARCHITECTURE.md</code> with ~500-word summary + agent definitions</td>
+      <td class="where"><code>./ARCHITECTURE.md</code></td>
+      <td class="evidence">Executive Summary at top (~500 words). §1 has ASCII system diagram. §2 defines each of the 4 agents with role / inputs / outputs / trust level. §12 has inter-agent JSON schemas.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">HG-5 — True multi-agent system (NOT single-agent or pipeline)</td>
+      <td class="where"><code>src/clinical_redteam/agents/</code></td>
+      <td class="evidence">4 distinct agent files: <code>red_team.py</code>, <code>judge.py</code>, <code>orchestrator.py</code>, <code>documentation.py</code>. Each with its own context, trust level, and Pydantic message schemas (ARCH §12).</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ====================================================== MVP REQUIREMENTS -->
+<h2>MVP Required Deliverables <span class="tag mvp">required tonight</span></h2>
+
+<table class="checklist">
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Requirement</th>
+      <th>Where</th>
+      <th>Evidence / verify</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">GitHub repository public + accessible</td>
+      <td class="where">github.com/TradeUpCards/clinical-redteam</td>
+      <td class="evidence">Public on GitHub (mirror). Primary on GitLab labs.gauntletai.com/coryvandenberg/clinical-redteam.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req"><code>README.md</code> — overview, run command, links to all artifacts</td>
+      <td class="where"><code>./README.md</code></td>
+      <td class="evidence">Refreshed in MR #18. Includes "Running the platform" copy-paste commands (single-shot + continuous + resume). Documentation map maps every PRD deliverable to a file in repo.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req"><code>USERS.md</code> — personas, workflows, automation justification</td>
+      <td class="where"><code>./USERS.md</code></td>
+      <td class="evidence">4 personas: Security Engineer, Clinical AI Platform Owner, Hospital CISO, Compliance Officer. Each with workflow + automation justification.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge progress">Pending</span></td>
+      <td class="req"><code>SETUP.md</code> — dev setup walkthrough</td>
+      <td class="where"><code>./SETUP.md</code></td>
+      <td class="evidence">Tate C2 — shipping immediately after this checklist lands. Will cover: venv setup, env vars, OpenRouter / Langfuse keys, HMAC config, SSH tunnel to deployed target, first run command.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge progress">Pending</span></td>
+      <td class="req">≥1 vulnerability report (MVP minimum)</td>
+      <td class="where"><code>./evals/vulnerabilities/VULN-001-*.md</code></td>
+      <td class="evidence">Bram drafting VULN-001 (C-7 cross-patient paraphrased leakage — testing-surface-limitation framing per Tate's investigation). Uses ARCH §12.4 format. Lands in Bram's B7 MR.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge done">Done</span></td>
+      <td class="req">Adversarial platform demonstrably running against live target</td>
+      <td class="where">B6 v2 run artifacts</td>
+      <td class="evidence"><code>evals/results/20260512T134033-f7bfca/manifest.json</code> shows 30 attacks executed against live target, $0.30 spent, cost ledger + coverage state durably persisted.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ====================================================== SUBMISSION ACTION -->
+<h2>Submission action <span class="tag mvp">required tonight</span></h2>
+
+<table class="checklist">
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Requirement</th>
+      <th>Where</th>
+      <th>Evidence / verify</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="status"><span class="badge progress">Pending</span></td>
+      <td class="req">All open MRs merged to <code>main</code></td>
+      <td class="where">GitLab MR queue</td>
+      <td class="evidence">Open MRs: #14 (Bram A6 CI gate), #16 (Tate docs), #17 (Bram names policy), #18 (Tate C1 README), Bram's incoming B7 VULN-001, Tate's incoming C2 SETUP. Merge order doesn't materially matter; tracker overlap auto-resolves.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge progress">Pending</span></td>
+      <td class="req">Submit MVP per Gauntlet submission process</td>
+      <td class="where">Gauntlet submission portal</td>
+      <td class="evidence">Includes deployed URL (HG-1), GitHub repo URL, brief writeup if required. Tate C3.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ====================================================== FINAL -->
+<h2>Final-only deliverables (NOT required tonight) <span class="tag final">Final cutoff Fri</span></h2>
+
+<table class="checklist">
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Requirement</th>
+      <th>Where</th>
+      <th>Phase 2 owner</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="status"><span class="badge deferred">Final</span></td>
+      <td class="req">≥3 vulnerability reports total</td>
+      <td class="where"><code>./evals/vulnerabilities/</code></td>
+      <td class="evidence">VULN-001 (Bram, MVP). VULN-002 + VULN-003 from continuous-mode runs (Tate Phase 2 P3 after P2 unattended run produces signal).</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge deferred">Final</span></td>
+      <td class="req">Demo video (3–5 min) of platform running</td>
+      <td class="where">YouTube unlisted + linked from README</td>
+      <td class="evidence">Cleo writes script (P6); Tate records.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge deferred">Final</span></td>
+      <td class="req">AI cost analysis at 100 / 1K / 10K / 100K test runs</td>
+      <td class="where"><code>./docs/cost-analysis.md</code></td>
+      <td class="evidence">Cleo P4. Built from real per-call cost data in <code>cost-ledger.json</code> files.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge deferred">Final</span></td>
+      <td class="req">Static-HTML dashboard</td>
+      <td class="where"><code>./dashboard.html</code> + <code>./scripts/generate_dashboard.py</code></td>
+      <td class="evidence">Cleo P5. Reads <code>evals/results/</code>; emits self-contained HTML with inline Chart.js.</td>
+    </tr>
+    <tr>
+      <td class="status"><span class="badge deferred">Final</span></td>
+      <td class="req">Social post (X) with platform demo + tag @GauntletAI</td>
+      <td class="where">External — link captured in submission</td>
+      <td class="evidence">Tate P8.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ====================================================== PRE-FLIGHT -->
+<h2>Pre-flight verification — run these RIGHT BEFORE clicking submit <span class="tag continuous">manual</span></h2>
+
+<div class="preflight">
+  <p>None of these change the artifacts — they prove what's already shipped is actually working at submission time.</p>
+  <ol>
+    <li><strong>Target /health endpoint:</strong>
+      <br><code>curl -s https://142-93-242-40.nip.io/health</code>
+      <br>Expect HTTP 200 with OpenEMR landing or readiness response. If failing, the deployed Co-Pilot is down — investigate before submitting.</li>
+    <li><strong>SSH tunnel + agent service smoke:</strong>
+      <br>From your local box with the tunnel up: <code>curl -s http://localhost:8000/health</code>
+      <br>Expect <code>{"status":"ok","llm_mode":"live"}</code>.</li>
+    <li><strong>Full pytest suite still green:</strong>
+      <br><code>.venv/Scripts/python.exe -m pytest -q</code> (or <code>source .venv/bin/activate; pytest -q</code> on macOS/Linux)
+      <br>Expect 255 passed (or higher after Bram's B7 lands).</li>
+    <li><strong>Single-shot smoke run:</strong>
+      <br><code>python -m clinical_redteam.run --category sensitive_information_disclosure --max-attacks 1 --no-mutate</code>
+      <br>Expect HTTP 200 from target, valid verdict, new run-id in <code>evals/results/</code>.</li>
+    <li><strong>Open this file (MVP-SUBMISSION-CHECKLIST.html) in a browser one more time</strong> and confirm everything in the four tables above is <span class="badge done">Done</span> for the MVP rows.</li>
+    <li><strong>Then submit</strong> via the Gauntlet portal — paste the deployed URL + GitHub repo URL + whatever the submission process requires.</li>
+  </ol>
+</div>
+
+<!-- ====================================================== PRD CROSS-CHECK -->
+<h2>PRD cross-check (read end-to-end 2026-05-12) <span class="tag continuous">verification</span></h2>
+
+<div class="box good">
+  <p><strong>PRD coverage verified.</strong> Read the source PRD at <code>docs/research/prd/Week 3 - AgentForge - Adversarial AI Security Platform PRD.pdf</code> end-to-end and cross-walked against <code>docs/PRD-REQUIREMENTS.html</code>. Every PRD requirement is captured in at least one tracker row: Hard Gates 1-5, the 6 Stage-2 attack categories, the 6 vuln-report fields (PRD p. 10), the 4 regression-harness requirements (PRD p. 10), the 6 observability questions (PRD p. 10), the 7 multi-agent capabilities (PRD p. 9), the Final-Note CISO-defense bar (PRD p. 12), and all 11 Pre-Search Checklist phases (PRD pp. 13-15).</p>
+</div>
+
+<div class="box warn">
+  <p><strong>Three PRD readings worth flagging before submit:</strong></p>
+  <ol>
+    <li><strong>"Forked from OpenEMR" (PRD p. 11, GitHub Repository row).</strong> Our W3 platform is a <em>standalone attacker</em>, not a fork. The fork-from-OpenEMR was the W1/W2 AgentForge Co-Pilot — which lives in our <a href="https://github.com/TradeUpCards/agentforge">companion repo</a>. README §"What this is" (lines 6-7) calls this out explicitly. Defendable framing: the target under attack is OpenEMR-derived; the attacker is intentionally separate so it outlives any one target version.</li>
+    <li><strong>Demo Video at MVP — ambiguous.</strong> PRD p. 11 lists "Demo Video (3-5 min)" in the Submission Requirements table without an explicit MVP/Final tag. PRD p. 6 "MVP: Recommended Steps" only enumerates Stages 1-4 (target / threat model / evals / architecture). Our build plan assumed Demo Video = Final only. <strong>Risk mitigation if time allows tonight:</strong> ship a 2-min Loom showing the B6 v2 run + Documentation Agent output. Not required by the explicit MVP cutline but reduces "did you ship a video?" grader confusion.</li>
+    <li><strong>AI Cost Analysis at MVP — same ambiguity.</strong> PRD p. 11 lists it without an explicit MVP/Final tag. Our build plan defers to Final (Cleo P4). <strong>Risk mitigation:</strong> we have real cost data in <code>cost-ledger.json</code> from B6 v2 — a stub <code>docs/cost-analysis.md</code> with the 30-attack burn extrapolated to 100/1K/10K/100K (even with placeholder architecture-change discussion) takes ~15 min and closes the ambiguity.</li>
+  </ol>
+  <p><strong>Tate recommendation:</strong> ship MVP tonight as planned (5 hard gates + README/USERS/SETUP + 1 vuln report). The two ambiguous items can land as "stretch" if Bram and Cleo finish B7+C2 with time to spare. Don't block submission on them.</p>
+</div>
+
+<!-- ====================================================== STALE WARNINGS -->
+<h2>How this file stays current</h2>
+
+<div class="box warn">
+  <p><strong>This is a single-pane consolidation</strong> derived from <code>docs/PRD-REQUIREMENTS.html</code> (which has the granular 73-item breakdown), <code>docs/MVP-WORK-PLAN.html</code> (work-item tracker), and the README's Documentation map. When work ships, update the corresponding row's Status badge here AND the source tracker. Tate sweeps this file at every <code>/tate</code> session start.</p>
+  <p>If you find a row here that contradicts the granular trackers, treat <em>this file</em> as suspect first — open the granular tracker to check what the source says. This file is curated, not authoritative; the granular trackers are.</p>
+</div>
+
+<script>
+  // Count badges and populate the summary cards.
+  document.addEventListener("DOMContentLoaded", () => {
+    // Only count badges in MVP + Hard Gates + Submission rows (not Final-only).
+    const mvpTables = Array.from(document.querySelectorAll("h2"))
+      .filter(h => !h.textContent.includes("Final-only"))
+      .map(h => {
+        let n = h.nextElementSibling;
+        while (n && n.tagName !== "TABLE") n = n.nextElementSibling;
+        return n;
+      })
+      .filter(Boolean);
+    const counts = { done: 0, progress: 0, blocked: 0, deferred: 0 };
+    for (const t of mvpTables) {
+      for (const b of t.querySelectorAll(".badge")) {
+        for (const k of Object.keys(counts)) if (b.classList.contains(k)) counts[k]++;
+      }
+    }
+    // Also count Final-only rows separately.
+    const finalH2 = Array.from(document.querySelectorAll("h2"))
+      .find(h => h.textContent.includes("Final-only"));
+    let finalCount = 0;
+    if (finalH2) {
+      let n = finalH2.nextElementSibling;
+      while (n && n.tagName !== "TABLE") n = n.nextElementSibling;
+      if (n) finalCount = n.querySelectorAll("tbody tr").length;
+    }
+    document.getElementById("cnt-done").textContent = counts.done;
+    document.getElementById("cnt-progress").textContent = counts.progress;
+    document.getElementById("cnt-blocked").textContent = counts.blocked;
+    document.getElementById("cnt-deferred").textContent = finalCount;
+  });
+</script>
+</body>
+</html>
