@@ -1,22 +1,26 @@
-"""End-to-end attack CLI — the Phase 1a vertical slice.
+"""End-to-end attack CLI.
 
-   Red Team seed/mutation → live target call → Judge verdict → persisted
-   regression artifacts → cost ledger updated → coverage state updated
+Two modes:
 
-Single-shot mode (this commit, Phase 1a #15): one attack, exit.
-Continuous mode (Phase 1b A2/A3): the `while not halt:` loop that calls
-this same vertical slice in iteration. Aria owns the continuous-mode CLI
-extension.
+1. **Single-shot (Phase 1a #15 vertical slice):** one attack, exit.
+   `python -m clinical_redteam.run --category sensitive_information_disclosure --max-attacks 1`
 
-Acceptance criterion (work plan):
-  `python -m clinical_redteam.run --category sensitive_information_disclosure
-   --max-attacks 1` runs end-to-end against the LIVE target; produces
-   `evals/results/<run-id>/` with attack + verdict + cost line.
+2. **Continuous (Phase 1b A3 — this commit):** `while not halt:` loop driven
+   by the Orchestrator daemon (A2). Picks categories, halts on cost cap /
+   signal collapse / coverage floor / max-iterations / SIGINT.
+   `python -m clinical_redteam.run --continuous --max-budget 5.00 \\
+       --halt-on-empty-categories`
 
-The verdict can be PASS / FAIL / PARTIAL / UNCERTAIN. What matters for
-the Phase 1a gate is that the FLOW works — the C-7 rediscovery may or
-may not fire on the first attempt; mutation pressure across the
-continuous-mode loop (Phase 1b) is where signal accumulates.
+   Per-iteration progress goes to stdout (one JSON line per iteration).
+   Final HaltReport summary printed on exit.
+
+Acceptance criterion (work plan A3):
+  Daemon starts; runs unattended; per-iteration line to stdout; halts
+  cleanly on bound; no orphaned processes.
+
+A4 will add resume-after-restart explicitly. The persistence layer
+already supports it; A4 wires the CLI to detect `--run-id <existing>`
+and resume rather than start fresh.
 """
 
 from __future__ import annotations
@@ -29,10 +33,21 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
+from clinical_redteam.agents.documentation import DocumentationAgent
 from clinical_redteam.agents.judge import JudgeAgent
+from clinical_redteam.agents.orchestrator import (
+    DEFAULT_SEEDS_BY_CATEGORY as _ORCH_DEFAULT_SEEDS,
+)
+from clinical_redteam.agents.orchestrator import (
+    HaltReason,
+    HaltReport,
+    OrchestratorConfig,
+    OrchestratorDaemon,
+)
 from clinical_redteam.agents.red_team import (
     AGENT_NAME as RED_TEAM_AGENT_NAME,
 )
@@ -58,10 +73,10 @@ from clinical_redteam.target_client import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SEEDS_BY_CATEGORY: dict[Category, str] = {
-    "sensitive_information_disclosure": "c7-paraphrased-leakage",
-    # Phase 1b Bram adds: "prompt_injection": ..., "unbounded_consumption": ...
-}
+
+# Single source of truth — re-exported from orchestrator. A3 removes the
+# duplicate dict that lived here in Phase 1a.
+DEFAULT_SEEDS_BY_CATEGORY: dict[Category, str] = dict(_ORCH_DEFAULT_SEEDS)
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +85,48 @@ DEFAULT_SEEDS_BY_CATEGORY: dict[Category, str] = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    load_dotenv()
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    if args.continuous:
+        return _run_continuous(args)
+    return _run_single_shot(args)
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m clinical_redteam.run",
-        description="Single-shot end-to-end attack (Phase 1a #15 vertical slice).",
+        description=(
+            "Run the Clinical Red Team Platform. Defaults to single-shot mode "
+            "(one attack, exit). Use --continuous for the daemon loop."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  Single-shot (Phase 1a #15 vertical slice):\n"
+            "    python -m clinical_redteam.run --category sensitive_information_disclosure\n"
+            "\n"
+            "  Continuous (Phase 1b A3 — bounded by cost):\n"
+            "    python -m clinical_redteam.run --continuous --max-budget 5.00 \\\n"
+            "        --halt-on-empty-categories\n"
+            "\n"
+            "  Continuous (bounded by iterations — useful for smoke tests):\n"
+            "    python -m clinical_redteam.run --continuous --max-iterations 5\n"
+        ),
+    )
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help=(
+            "Run the Orchestrator daemon (A2) until a halt condition fires "
+            "instead of running a single attack."
+        ),
     )
     parser.add_argument(
         "--category",
@@ -82,51 +136,270 @@ def main(argv: list[str] | None = None) -> int:
             "unbounded_consumption",
         ],
         default="sensitive_information_disclosure",
-        help="Attack category to load seed from (default: SID — the C-7 reproducer)",
+        help=(
+            "[single-shot] Attack category to load seed from. In continuous "
+            "mode the Orchestrator picks categories itself per ARCH §3.6.1."
+        ),
     )
     parser.add_argument(
         "--seed",
         default=None,
         help=(
-            "Specific seed_id to use; defaults to the canonical seed for the "
-            "category (SID → c7-paraphrased-leakage)"
+            "[single-shot] Specific seed_id to use; defaults to the canonical "
+            "seed for the chosen category."
         ),
     )
     parser.add_argument(
         "--max-attacks",
         type=int,
         default=1,
-        help="Number of attack iterations (Phase 1a #15 supports 1; Phase 1b A3 extends)",
+        help=(
+            "[single-shot] Number of attack iterations (Phase 1a #15: 1 only). "
+            "For continuous mode use --max-iterations instead."
+        ),
+    )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help=(
+            "[continuous] Upper bound on iterations before halt. Default: "
+            "unbounded — halt fires on cost cap / signal collapse / coverage."
+        ),
+    )
+    parser.add_argument(
+        "--max-budget",
+        type=float,
+        default=None,
+        help=(
+            "[continuous] Hard cost cap in USD. Overrides MAX_SESSION_COST_USD "
+            "env var. Daemon halts cleanly when total session cost >= cap."
+        ),
+    )
+    parser.add_argument(
+        "--halt-on-empty-categories",
+        action="store_true",
+        help=(
+            "[continuous] Halt when there is no seeded category to attack "
+            "(rather than running existing categories indefinitely)."
+        ),
+    )
+    parser.add_argument(
+        "--signal-floor",
+        type=float,
+        default=None,
+        help=(
+            "[continuous] If > 0, halt when recent-window signal-to-cost falls "
+            "below this floor (ARCH §10.2 — signal collapse detection). "
+            "Default: disabled."
+        ),
     )
     parser.add_argument(
         "--no-mutate",
         action="store_true",
-        help="Use seed verbatim instead of calling OpenRouter for mutation (fixture mode)",
+        help=(
+            "[single-shot] Use seed verbatim instead of calling OpenRouter for "
+            "mutation. Useful for deterministic regression replay."
+        ),
     )
     parser.add_argument(
         "--run-id",
         default=None,
-        help="Run ID for the results directory (defaults to UTC timestamp + uuid suffix)",
+        help="Run ID for the results directory (defaults to UTC timestamp + uuid suffix).",
     )
     parser.add_argument(
         "--results-dir",
         default=None,
-        help="Override RESULTS_DIR env var",
+        help="Override RESULTS_DIR env var.",
     )
-    args = parser.parse_args(argv)
+    return parser
 
-    load_dotenv()
-    logging.basicConfig(
-        level=os.getenv("LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+
+# ---------------------------------------------------------------------------
+# Continuous mode (A3)
+# ---------------------------------------------------------------------------
+
+
+def _run_continuous(args: argparse.Namespace) -> int:
+    """Build the Orchestrator daemon and run it until halt.
+
+    Each iteration emits one JSON line to stdout. Final HaltReport is
+    written as a single JSON object on stdout when the daemon halts.
+    """
+    # Reject single-shot-only flags that don't apply
+    if args.seed is not None:
+        print(
+            "ERROR: --seed is single-shot only. In continuous mode the "
+            "Orchestrator picks seeds per ARCH §3.6.1.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.no_mutate:
+        print(
+            "ERROR: --no-mutate is single-shot only. In continuous mode "
+            "mutation is automatically reduced at the soft cost-cap.",
+            file=sys.stderr,
+        )
+        return 2
+
+    run_id = args.run_id or _new_run_id()
+    results_dir = Path(args.results_dir or os.getenv("RESULTS_DIR", "./evals/results"))
+    evals_dir = Path(os.getenv("EVALS_DIR", "./evals"))
+    canonical_vuln_dir = Path(os.getenv("EVALS_DIR", "./evals")) / "vulnerabilities"
+
+    target_url = os.getenv("RED_TEAM_TARGET_URL", "")
+    if not target_url:
+        print("ERROR: RED_TEAM_TARGET_URL is required. Populate .env.", file=sys.stderr)
+        return 2
+
+    cost_cap_usd = args.max_budget if args.max_budget is not None else float(
+        os.getenv("MAX_SESSION_COST_USD", "10")
     )
+    if cost_cap_usd <= 0:
+        print(
+            f"ERROR: --max-budget must be > 0; got {cost_cap_usd}.",
+            file=sys.stderr,
+        )
+        return 2
+
+    handle = start_run(
+        run_id=run_id,
+        results_dir=results_dir,
+        target_url=target_url,
+        extra_metadata={
+            "cli": "phase_1b_a3_continuous",
+            "halt_on_empty_categories": args.halt_on_empty_categories,
+        },
+    )
+    ledger = CostLedger.create(run_dir=handle.run_dir, cost_cap_usd=cost_cap_usd)
+    coverage = CoverageTracker.create(
+        run_dir=handle.run_dir,
+        target_version_sha="unknown",  # Phase 2 reads /version from target
+        cost_cap_usd=cost_cap_usd,
+    )
+    obs = Observability.from_env(session_id=run_id)
+    # Audit MEDIUM-1: ensure obs buffer drains even if daemon CONSTRUCTION
+    # raises (e.g., RedTeamAgent.from_env() raising on missing OpenRouter
+    # key). The inner finally inside `run_until_halt` is the primary flush
+    # site; this outer try/finally is the safety net for the construction
+    # window. Calling flush() twice is idempotent.
+    try:
+        config_overrides: dict[str, Any] = {
+            "halt_on_empty_categories": args.halt_on_empty_categories,
+            "on_iteration": _stdout_iteration_emitter,
+        }
+        if args.signal_floor is not None:
+            config_overrides["signal_floor"] = args.signal_floor
+
+        config = OrchestratorConfig.from_env(
+            evals_dir=evals_dir,
+            canonical_vuln_dir=canonical_vuln_dir,
+            **config_overrides,
+        )
+
+        logger.info(
+            "starting continuous daemon: run=%s cap=$%.2f max_iter=%s",
+            run_id, cost_cap_usd, args.max_iterations,
+        )
+        logger.info("results dir: %s", handle.run_dir)
+
+        daemon = OrchestratorDaemon(
+            red_team=RedTeamAgent.from_env(),
+            judge=JudgeAgent.from_env(),
+            documentation=DocumentationAgent.from_env(),
+            target=TargetClient.from_env(),
+            coverage=coverage,
+            ledger=ledger,
+            handle=handle,
+            obs=obs,
+            config=config,
+            session_id=run_id,
+        )
+
+        report = daemon.run_until_halt(max_iterations=args.max_iterations)
+        _emit_halt_report(report=report, run_id=run_id, run_dir=handle.run_dir)
+        return _exit_code_for_halt(report.reason)
+    finally:
+        obs.flush()
+
+
+def _stdout_iteration_emitter(line: dict[str, Any]) -> None:
+    """Print one JSON line per iteration — the operator's progress signal."""
+    # default=str so datetimes / Paths serialize cleanly
+    print(json.dumps(line, default=str), flush=True)
+
+
+def _emit_halt_report(*, report: HaltReport, run_id: str, run_dir: Path) -> None:
+    """Final JSON summary written to stdout when the daemon halts."""
+    payload = {
+        "halt_reason": report.reason.value,
+        "iterations": report.iterations,
+        "attacks_attempted": report.attacks_attempted,
+        "attacks_skipped_refused": report.attacks_skipped_refused,
+        "target_unavailable_count": report.target_unavailable_count,
+        "provider_outage_count": report.provider_outage_count,
+        "total_cost_usd": report.total_cost_usd,
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+    }
+    print(json.dumps(payload, indent=2, default=str))
+
+
+# Halt-reason → process exit code. 0 means "clean shutdown for a benign
+# reason"; non-zero indicates an external condition the operator may care
+# about (target outage, HMAC misconfig, provider outage, content filter
+# stuck). Cost cap + coverage met + max iterations + interrupt all exit 0.
+_HALT_EXIT_CODES: dict[HaltReason, int] = {
+    HaltReason.COST_CAP_REACHED: 0,
+    HaltReason.COST_CAP_PROJECTED_BREACH: 0,
+    HaltReason.MAX_ITERATIONS_REACHED: 0,
+    HaltReason.SIGNAL_TO_COST_COLLAPSED: 0,
+    HaltReason.COVERAGE_FLOOR_MET_NO_OPEN: 0,
+    HaltReason.NO_ELIGIBLE_CATEGORIES: 0,
+    HaltReason.SIGNAL_INTERRUPT: 0,
+    HaltReason.HMAC_REJECTED: 4,
+    HaltReason.TARGET_CIRCUIT_OPEN: 5,
+    HaltReason.CONTENT_FILTER_JAMMED: 6,
+    HaltReason.PROVIDER_OUTAGE_PERSISTENT: 7,
+}
+
+
+def _exit_code_for_halt(reason: HaltReason) -> int:
+    return _HALT_EXIT_CODES.get(reason, 1)
+
+
+# ---------------------------------------------------------------------------
+# Single-shot mode (Phase 1a #15 — preserved verbatim for regression replay)
+# ---------------------------------------------------------------------------
+
+
+def _run_single_shot(args: argparse.Namespace) -> int:
+    # Audit MEDIUM-2: symmetric rejection — continuous-only flags should not
+    # be silently ignored in single-shot mode. The parser's help text marks
+    # each flag with [continuous]/[single-shot] but only the runtime check
+    # makes the boundary enforced.
+    _continuous_only_set = []
+    if args.max_iterations is not None:
+        _continuous_only_set.append("--max-iterations")
+    if args.max_budget is not None:
+        _continuous_only_set.append("--max-budget")
+    if args.halt_on_empty_categories:
+        _continuous_only_set.append("--halt-on-empty-categories")
+    if args.signal_floor is not None:
+        _continuous_only_set.append("--signal-floor")
+    if _continuous_only_set:
+        print(
+            "ERROR: the following flags are continuous-mode-only and require "
+            f"--continuous: {', '.join(_continuous_only_set)}.",
+            file=sys.stderr,
+        )
+        return 2
 
     if args.max_attacks != 1:
-        # Phase 1a #15 ships single-shot only; continuous mode (Phase 1b A2/A3)
-        # extends this loop with halt conditions per ARCH §10.2.
+        # Phase 1a #15 ships single-shot only; for N>1 use --continuous.
         print(
-            f"WARN: Phase 1a #15 supports --max-attacks=1; got {args.max_attacks}. "
-            "Continuous mode lands in Phase 1b A2/A3.",
+            f"WARN: single-shot mode supports --max-attacks=1; got "
+            f"{args.max_attacks}. Use --continuous for multi-iteration runs.",
             file=sys.stderr,
         )
 
@@ -165,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
     ledger = CostLedger.create(run_dir=handle.run_dir, cost_cap_usd=cost_cap_usd)
     coverage = CoverageTracker.create(
         run_dir=handle.run_dir,
-        target_version_sha="unknown",  # Phase 1b reads /version from target
+        target_version_sha="unknown",
         cost_cap_usd=cost_cap_usd,
     )
     obs = Observability.from_env(session_id=run_id)
@@ -176,8 +449,6 @@ def main(argv: list[str] | None = None) -> int:
     red_team = RedTeamAgent.from_env()
     target = TargetClient.from_env()
     judge = JudgeAgent.from_env()
-
-    coverage.record_attack(category=args.category)
 
     # -- Red Team --
     try:
@@ -204,15 +475,17 @@ def main(argv: list[str] | None = None) -> int:
         obs.flush()
         return 3
 
+    # ORDER LOAD-BEARING — same invariant the daemon enforces:
+    # save_attack FIRST so cost entries never reference orphan attack files.
+    handle.save_attack(candidate)
     ledger.record(
         tier="red_team",
         model_used=candidate.model_used,
         cost_usd=candidate.cost_usd,
-        tokens_input=0,  # exposed in Phase 1b once Red Team plumbs usage through
+        tokens_input=0,
         tokens_output=0,
         related_id=candidate.attack_id,
     )
-    handle.save_attack(candidate)
     logger.info("attack saved: %s", candidate.attack_id)
 
     # -- Target call --
@@ -248,6 +521,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Target unavailable: {exc}", file=sys.stderr)
         obs.flush()
         return 5
+
+    # coverage.record_attack AFTER target success — same invariant as daemon
+    coverage.record_attack(category=args.category)
 
     logger.info(
         "target HTTP %d (latency=%dms request_id=%s)",
