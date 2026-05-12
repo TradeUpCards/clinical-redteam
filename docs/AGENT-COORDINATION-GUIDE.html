@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Coordination Guide — When + How to Parallelize Leads</title>
+<style>
+  :root {
+    /* paper + ink — warmer, slightly more tonal range than before */
+    --paper:        #f7f5f0;
+    --paper-tint:   #f1ede4;
+    --surface:      #ffffff;
+    --surface-2:    #fbfaf6;
+    --ink:          #14110d;
+    --ink-soft:     #3b3833;
+    --muted:        #6f6a62;
+    --soft:         #908a7f;
+    --line:         #e3ddd1;
+    --line-soft:    #ece7da;
+    --line-strong:  #c0b9aa;
+    --code-bg:      #f0ece1;
+    --code-ink:     #2a2823;
+
+    /* lead identities (locked — used in companion doc W3-LEAD-PLAN.html) */
+    --tate: #c2410c;
+    --aria: #0e7490;
+    --bram: #15803d;
+    --cleo: #9333ea;
+    --platform: #475569;
+
+    /* tonal washes for the lead colors — used in figure backgrounds + chips */
+    --tate-wash: #fef0e6;
+    --aria-wash: #e6f4f6;
+    --bram-wash: #e8f4ec;
+    --cleo-wash: #f3ebfb;
+    --platform-wash: #eef1f5;
+
+    /* status palette — refined for warmth on the paper background */
+    --good:    #166534;
+    --good-2:  #15803d;
+    --good-bg: #ecfdf5;
+    --good-rule: #bbf7d0;
+
+    --warn:    #92400e;
+    --warn-2:  #b45309;
+    --warn-bg: #fef8ec;
+    --warn-rule: #fde68a;
+
+    --bad:     #991b1b;
+    --bad-2:   #b91c1c;
+    --bad-bg:  #fdf2f2;
+    --bad-rule: #fecaca;
+
+    --info:    #1e40af;
+    --info-2:  #1d4ed8;
+    --info-bg: #eff5fe;
+    --info-rule: #c7d8f5;
+
+    /* type stacks */
+    --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+    --font-sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono:  "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15.5px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    /* very subtle paper texture via layered gradients — no external assets */
+    background-image:
+      radial-gradient(circle at 18% 12%, rgba(194, 65, 12, 0.025), transparent 38%),
+      radial-gradient(circle at 82% 88%, rgba(14, 116, 144, 0.022), transparent 42%),
+      linear-gradient(180deg, var(--paper) 0%, var(--paper) 100%);
+  }
+
+  ::selection { background: #faead6; color: var(--ink); }
+
+  code, .mono {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--line-soft);
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 14px 18px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line-strong);
+    margin: 10px 0 4px;
+  }
+  pre code { background: transparent; border: none; padding: 0; font-size: inherit; }
+
+  a { color: var(--info-2); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 120ms ease; }
+  a:hover { border-bottom-color: var(--info-2); }
+
+  blockquote { margin: 0; }
+
+  .page { max-width: 1080px; margin: 0 auto; padding: 56px 32px 120px; }
+
+  /* ========================== HEADER BANNER ========================== */
+  header.banner {
+    margin-bottom: 56px;
+    padding-bottom: 28px;
+    position: relative;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  header.banner::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0;
+    width: 64px; height: 3px;
+    background: var(--tate);
+  }
+  header.banner .eyebrow {
+    display: flex; gap: 18px; align-items: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--soft);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 18px 0 14px;
+  }
+  header.banner .eyebrow .dot {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--tate);
+    display: inline-block;
+  }
+  header.banner h1 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    max-width: 22ch;
+  }
+  header.banner h1 em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+  header.banner .sub {
+    color: var(--ink-soft);
+    font-size: 16px;
+    line-height: 1.55;
+    margin-top: 18px;
+    max-width: 62ch;
+  }
+  header.banner .meta {
+    display: flex; flex-wrap: wrap; gap: 22px;
+    margin-top: 24px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  header.banner .meta span strong { color: var(--ink); font-weight: 600; }
+
+  /* ========================== HEADINGS ========================== */
+  h2 {
+    font-family: var(--font-serif);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 68px 0 22px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  h2 .num {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--soft);
+    margin-right: 4px;
+  }
+  h2 .label {
+    font-family: var(--font-mono);
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-left: auto;
+    padding: 3px 9px;
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    background: var(--surface-2);
+  }
+  h3 {
+    font-family: var(--font-sans);
+    font-size: 16.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--ink);
+    margin: 32px 0 12px;
+    letter-spacing: -0.005em;
+  }
+  h4 {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    margin: 20px 0 10px;
+    color: var(--soft);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  p, ul, ol { margin: 10px 0 14px; }
+  ul, ol { padding-left: 22px; }
+  ul li, ol li { margin: 5px 0; }
+  ul li::marker { color: var(--soft); }
+  ol li::marker { color: var(--soft); font-variant-numeric: tabular-nums; }
+
+  strong { font-weight: 600; color: var(--ink); }
+  em { font-style: italic; }
+
+  /* ========================== BOXES / CALLOUTS ========================== */
+  .box {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 18px 22px 18px 24px;
+    margin: 20px 0;
+    box-shadow: 0 1px 0 rgba(20,17,13,0.02);
+  }
+  .box::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    border-radius: 4px 0 0 4px;
+  }
+  .box p:first-child { margin-top: 0; }
+  .box p:last-child  { margin-bottom: 0; }
+  .box > strong:first-child { display: block; margin-bottom: 6px; color: var(--ink); }
+
+  .box.tldr {
+    background: var(--surface-2);
+    border-color: var(--line-strong);
+    padding: 22px 26px 22px 28px;
+  }
+  .box.tldr::before { background: var(--ink); }
+  .box.tldr > strong:first-child {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin-bottom: 10px;
+  }
+  .box.tldr p { font-size: 15px; }
+
+  .box.good { background: var(--good-bg); border-color: var(--good-rule); }
+  .box.good::before { background: var(--good); }
+  .box.warn { background: var(--warn-bg); border-color: var(--warn-rule); }
+  .box.warn::before { background: var(--warn-2); }
+  .box.bad  { background: var(--bad-bg);  border-color: var(--bad-rule); }
+  .box.bad::before  { background: var(--bad-2); }
+  .box.info { background: var(--info-bg); border-color: var(--info-rule); }
+  .box.info::before { background: var(--info-2); }
+
+  .box .label-tag {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-right: 10px;
+    margin-bottom: 8px;
+    vertical-align: 2px;
+    border: 1px solid transparent;
+  }
+  .box.good .label-tag { background: var(--good); color: #f0fdf4; }
+  .box.warn .label-tag { background: var(--warn-2); color: #fffbeb; }
+  .box.bad  .label-tag { background: var(--bad-2);  color: #fef2f2; }
+  .box.info .label-tag { background: var(--info-2); color: #eff6ff; }
+
+  /* ========================== TABLES ========================== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--soft);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:nth-child(even) td { background: rgba(247, 245, 240, 0.4); }
+  tbody tr:hover td { background: var(--paper-tint); }
+
+  /* ========================== PILLS ========================== */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.5;
+    text-transform: none;
+    letter-spacing: 0;
+    color: white;
+    vertical-align: 1px;
+  }
+  .pill.tate { background: var(--tate); }
+  .pill.aria { background: var(--aria); }
+  .pill.bram { background: var(--bram); }
+  .pill.cleo { background: var(--cleo); }
+  .pill.platform { background: var(--platform); }
+  .pill.neutral  { background: var(--soft); }
+
+  /* ========================== FIGURES (SVG) ========================== */
+  .figure {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 24px 18px 18px;
+    margin: 22px 0 28px;
+    text-align: center;
+    box-shadow: 0 1px 0 rgba(20,17,13,0.02);
+  }
+  .figure svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .figure .caption {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    margin-top: 16px;
+    padding: 12px 14px 0;
+    text-align: left;
+    border-top: 1px dashed var(--line);
+    max-width: 78ch;
+  }
+
+  /* ========================== TWO-COL ========================== */
+  .twocol {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin: 18px 0;
+  }
+  .twocol > div {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 20px 22px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .twocol > div::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+  .twocol > div.platform::before { background: var(--platform); }
+  .twocol > div.coord::before    { background: var(--tate); }
+  .twocol > div.platform { background: linear-gradient(180deg, var(--platform-wash) 0%, var(--surface) 56px); }
+  .twocol > div.coord    { background: linear-gradient(180deg, var(--tate-wash)     0%, var(--surface) 56px); }
+  .twocol h4 { margin-top: 0; }
+  .twocol ul { padding-left: 18px; }
+  .twocol p { font-size: 14.5px; }
+  .twocol pre { margin-top: 12px; }
+
+  /* ========================== DECISION MATRIX ========================== */
+  .decision-matrix { font-size: 14px; }
+  .decision-matrix td.scenario { font-weight: 500; max-width: 320px; color: var(--ink); }
+  .decision-matrix td.pattern  {
+    font-weight: 600;
+    font-family: var(--font-sans);
+    color: var(--ink);
+    white-space: nowrap;
+    width: 26%;
+  }
+
+  /* ========================== QUICK REFERENCE CARD ========================== */
+  .qref {
+    background: #1a1612;
+    color: #e9e3d3;
+    padding: 26px 28px 24px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    margin: 22px 0;
+    position: relative;
+    border: 1px solid #2a241d;
+    box-shadow:
+      0 1px 0 rgba(20,17,13,0.04),
+      inset 0 1px 0 rgba(255,255,255,0.03);
+    overflow-x: auto;
+  }
+  .qref::before {
+    content: "QUICK REFERENCE  ·  pin or copy";
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    color: #6f655a;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #2a241d;
+  }
+  .qref .qkey     { color: #f4a460; font-weight: 600; }
+  .qref .qval     { color: #e9e3d3; }
+  .qref .qcomment { color: #6f655a; font-style: italic; }
+
+  /* ========================== ONE-SENTENCE SUMMARY ========================== */
+  .summary {
+    margin-top: 40px;
+    padding: 30px 34px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 5px;
+    position: relative;
+  }
+  .summary::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0;
+    width: 64px; height: 3px;
+    background: var(--ink);
+  }
+  .summary .label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--soft);
+    display: block;
+    margin-bottom: 12px;
+  }
+  .summary p {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--ink);
+    margin: 0;
+  }
+  .summary p em { font-style: italic; color: var(--ink-soft); }
+
+  /* inline blockquote inside .box.warn (Pitfall 2 quote) */
+  .box blockquote {
+    margin: 8px 0 0 4px;
+    padding: 10px 14px;
+    border-left: 2px solid var(--line-strong);
+    font-family: var(--font-serif);
+    font-size: 14.5px;
+    font-style: italic;
+    color: var(--ink-soft);
+    background: rgba(255,255,255,0.5);
+    border-radius: 0 3px 3px 0;
+  }
+  .box blockquote code {
+    font-style: normal;
+    background: rgba(255,255,255,0.7);
+  }
+
+  /* ========================== RESPONSIVE ========================== */
+  @media (max-width: 800px) {
+    .page { padding: 36px 20px 80px; }
+    header.banner h1 { font-size: 30px; }
+    h2 { font-size: 22px; margin-top: 52px; }
+    h2 .label { margin-left: 0; }
+    .twocol { grid-template-columns: 1fr; }
+    table { font-size: 13px; }
+    .figure { padding: 16px 8px 14px; }
+  }
+  @media print {
+    body { background: white; }
+    .page { padding: 12mm; max-width: none; }
+    .figure, .box, table { break-inside: avoid; }
+    .qref { background: #1a1612 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="banner">
+  <div class="eyebrow">
+    <span class="dot"></span>
+    <span>Clinical Red Team Platform &nbsp;·&nbsp; Week 3 &nbsp;·&nbsp; Internal Reference</span>
+  </div>
+  <h1>Agent Coordination Guide <em>— When + How to Parallelize Leads</em></h1>
+  <div class="sub">
+    Practical playbook for the W3 Clinical Red Team Platform &mdash; and any future project where Tate orchestrates Aria / Bram / Cleo. Built from lessons learned in the 2026-05-12 overnight build session.
+  </div>
+  <div class="meta">
+    <span><strong>Audience</strong> &nbsp; project owner, returning</span>
+    <span><strong>Companion</strong> &nbsp; W3-LEAD-PLAN.html</span>
+    <span><strong>Status</strong> &nbsp; living document</span>
+  </div>
+</header>
+
+<!-- ===================================================== TL;DR -->
+<div class="box tldr">
+  <strong>TL;DR</strong>
+  <p>The lead-coordination problem you're solving (Tate dispatching Aria + Bram, communicating blockers + unblocks) is <em>structurally the same problem class</em> the Clinical Red Team Platform solves for the attack workflow. The platform's architectural choices &mdash; multi-agent with separated incentives, structured state, filesystem checkpoints, bounded autonomy with human gates &mdash; map directly onto how you should coordinate the leads.</p>
+  <p><strong>Three dispatch patterns:</strong> (A) separate terminals + slash commands per worktree, (B) Tate spawns leads via the <code>Agent</code> tool, (C) hybrid. <strong>Worktrees + branches stay separate regardless.</strong> Pick the pattern based on the work shape, not the mechanism.</p>
+</div>
+
+<!-- ===================================================== 1. THE MAPPING -->
+<h2><span class="num">01</span> The Mirror &mdash; Why the Platform Architecture Validates Itself <span class="label">conceptual</span></h2>
+
+<p>While building the Clinical Red Team Platform, you also <em>are</em> a multi-agent system: <span class="pill tate">Tate</span> coordinates, <span class="pill aria">Aria</span> implements, <span class="pill bram">Bram</span> writes evals + audits, <span class="pill cleo">Cleo</span> polishes. The platform attacks the Clinical Co-Pilot with Red Team / Judge / Orchestrator / Documentation. <strong>Same shape, different domain.</strong></p>
+
+<div class="twocol">
+  <div class="platform">
+    <h4 style="color: var(--platform)">The Platform We're Building</h4>
+    <ul>
+      <li><strong>Orchestrator Agent</strong> picks next attack category from approved list</li>
+      <li><strong>Red Team Agent</strong> generates / mutates attacks</li>
+      <li><strong>Judge Agent</strong> independently evaluates verdicts (separate model provider from Red Team)</li>
+      <li><strong>Documentation Agent</strong> drafts vulnerability reports; high/critical stay DRAFT</li>
+      <li><strong>CoverageState</strong> drives routing</li>
+      <li><strong>CostLedger</strong> with halt conditions (cost cap, signal collapse, coverage floor)</li>
+      <li><strong>Filesystem checkpoints</strong> before every external call (resume after crash)</li>
+      <li><strong>Multi-agent inter-message schemas</strong> (Pydantic; ARCH §12)</li>
+      <li><strong>Hard content filter</strong> pre-flight on every attack</li>
+      <li><strong>Human gate</strong> on high-severity report filing</li>
+    </ul>
+  </div>
+  <div class="coord">
+    <h4 style="color: var(--tate)">Our Lead Coordination</h4>
+    <ul>
+      <li><strong>Tate</strong> picks next lead to dispatch based on cross-stream state</li>
+      <li><strong>Implementing leads</strong> (Aria/Bram) produce work in their tracks</li>
+      <li><strong>Audit subagent</strong> independently reviews each commit (different model invocation from the implementer)</li>
+      <li><strong>Handoff entries</strong> draft cross-session intent; user approves substantive scope changes</li>
+      <li><strong><code>in-flight.md</code> "In Flight" table</strong> drives next-action decisions</li>
+      <li><strong>Token spend + MVP cutoff</strong> are the halt conditions</li>
+      <li><strong>Handoff file writes</strong> before every <code>/clear</code> or session end (resume after restart)</li>
+      <li><strong>Handoff entry template + Watch List row template</strong> (filesystem schemas, not Pydantic)</li>
+      <li><strong>Audit-each-step discipline</strong> before commit (<code>w3-audit-each-step</code> memory)</li>
+      <li><strong>Human gate</strong> on schema changes / scope decisions / content-filter weakening</li>
+    </ul>
+  </div>
+</div>
+
+<div class="figure">
+<svg width="720" height="360" viewBox="0 0 720 360" role="img" aria-label="Platform agents (left) mirrored by Lead agents (right).">
+  <defs>
+    <marker id="arrowGrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9a948a"/>
+    </marker>
+  </defs>
+
+  <!-- Left panel background -->
+  <rect x="20" y="34" width="320" height="306" fill="#eef1f5" rx="6" opacity="0.55"/>
+  <!-- Right panel background -->
+  <rect x="380" y="34" width="320" height="306" fill="#fef0e6" rx="6" opacity="0.6"/>
+
+  <!-- Platform header -->
+  <text x="180" y="22" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="13" font-weight="600" fill="#475569" text-anchor="middle" letter-spacing="0.02em">Platform agents — attack the Co-Pilot</text>
+
+  <!-- Orchestrator -->
+  <rect x="60" y="50" width="240" height="50" fill="#ffffff" stroke="#475569" stroke-width="1.5" rx="4"/>
+  <text x="180" y="70" font-size="12.5" font-weight="600" text-anchor="middle" fill="#14110d">Orchestrator</text>
+  <text x="180" y="86" font-size="10.5" fill="#6f6a62" text-anchor="middle">picks next category</text>
+
+  <!-- Red Team -->
+  <rect x="60" y="124" width="110" height="48" fill="#ffffff" stroke="#0e7490" stroke-width="1.5" rx="4"/>
+  <text x="115" y="144" font-size="11.5" font-weight="600" text-anchor="middle" fill="#0e7490">Red Team</text>
+  <text x="115" y="160" font-size="10" fill="#6f6a62" text-anchor="middle">generates</text>
+
+  <!-- Judge -->
+  <rect x="190" y="124" width="110" height="48" fill="#ffffff" stroke="#15803d" stroke-width="1.5" rx="4"/>
+  <text x="245" y="144" font-size="11.5" font-weight="600" text-anchor="middle" fill="#15803d">Judge</text>
+  <text x="245" y="160" font-size="10" fill="#6f6a62" text-anchor="middle">verdicts</text>
+
+  <!-- Documentation -->
+  <rect x="60" y="196" width="240" height="48" fill="#ffffff" stroke="#9333ea" stroke-width="1.5" rx="4"/>
+  <text x="180" y="216" font-size="12.5" font-weight="600" text-anchor="middle" fill="#9333ea">Documentation</text>
+  <text x="180" y="232" font-size="10.5" fill="#6f6a62" text-anchor="middle">drafts vuln reports</text>
+
+  <!-- connectors left -->
+  <line x1="155" y1="100" x2="115" y2="124" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+  <line x1="205" y1="100" x2="245" y2="124" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+  <line x1="115" y1="172" x2="160" y2="196" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+  <line x1="245" y1="172" x2="200" y2="196" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+
+  <!-- footnotes left -->
+  <text x="180" y="272" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— CoverageState + CostLedger</text>
+  <text x="180" y="290" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— Filesystem checkpoints</text>
+  <text x="180" y="308" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— Pydantic schemas (ARCH §12)</text>
+  <text x="180" y="326" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— Human gate on high-severity</text>
+
+  <!-- divider -->
+  <line x1="360" y1="34" x2="360" y2="340" stroke="#c0b9aa" stroke-width="0.75" stroke-dasharray="3 5"/>
+
+  <!-- Coordination header -->
+  <text x="540" y="22" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="13" font-weight="600" fill="#c2410c" text-anchor="middle" letter-spacing="0.02em">Lead agents — build the platform</text>
+
+  <!-- Tate -->
+  <rect x="420" y="50" width="240" height="50" fill="#ffffff" stroke="#c2410c" stroke-width="1.5" rx="4"/>
+  <text x="540" y="70" font-size="12.5" font-weight="600" text-anchor="middle" fill="#14110d">Tate</text>
+  <text x="540" y="86" font-size="10.5" fill="#6f6a62" text-anchor="middle">picks next lead</text>
+
+  <!-- Aria -->
+  <rect x="420" y="124" width="110" height="48" fill="#ffffff" stroke="#0e7490" stroke-width="1.5" rx="4"/>
+  <text x="475" y="144" font-size="11.5" font-weight="600" text-anchor="middle" fill="#0e7490">Aria</text>
+  <text x="475" y="160" font-size="10" fill="#6f6a62" text-anchor="middle">implements</text>
+
+  <!-- Bram -->
+  <rect x="550" y="124" width="110" height="48" fill="#ffffff" stroke="#15803d" stroke-width="1.5" rx="4"/>
+  <text x="605" y="144" font-size="11.5" font-weight="600" text-anchor="middle" fill="#15803d">Bram</text>
+  <text x="605" y="160" font-size="10" fill="#6f6a62" text-anchor="middle">evals + audits</text>
+
+  <!-- Cleo -->
+  <rect x="420" y="196" width="240" height="48" fill="#ffffff" stroke="#9333ea" stroke-width="1.5" rx="4"/>
+  <text x="540" y="216" font-size="12.5" font-weight="600" text-anchor="middle" fill="#9333ea">Cleo (Phase 2)</text>
+  <text x="540" y="232" font-size="10.5" fill="#6f6a62" text-anchor="middle">dashboard + demo polish</text>
+
+  <!-- connectors right -->
+  <line x1="515" y1="100" x2="475" y2="124" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+  <line x1="565" y1="100" x2="605" y2="124" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+  <line x1="475" y1="172" x2="520" y2="196" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+  <line x1="605" y1="172" x2="560" y2="196" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowGrey)"/>
+
+  <!-- footnotes right -->
+  <text x="540" y="272" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— in-flight.md + Watch List</text>
+  <text x="540" y="290" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— Handoff files (.gauntlet/week3/)</text>
+  <text x="540" y="308" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— Handoff schema (template)</text>
+  <text x="540" y="326" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#6f6a62" text-anchor="middle">— Human gate on schema/scope</text>
+</svg>
+  <div class="caption">Same architectural shape on both sides: an orchestrator routes; specialized agents produce; coordination state persists on disk; bounded autonomy with human gates at the right boundaries.</div>
+</div>
+
+<div class="box info">
+  <span class="label-tag">Why this matters</span>
+  <p><strong>Both directions of value flow:</strong></p>
+  <ol>
+    <li><strong>Platform &rarr; coordination:</strong> we can eat our own dog food. <code>/tate-watch-poll</code> isn't a new design problem &mdash; it's a stripped-down <code>OrchestratorDaemon</code>. Reuse the persistence primitives + halt-evaluation pattern when we build it (post-MVP).</li>
+    <li><strong>Coordination &rarr; platform:</strong> living through the failure modes ARCH §10.2 predicts (Bram blocked on Tate's B6 with no auto-resume <em>is</em> the "open finding pile-up" failure mode) validates the architecture experientially. Interview gold.</li>
+  </ol>
+</div>
+
+<!-- ===================================================== 2. THREE DISPATCH PATTERNS -->
+<h2><span class="num">02</span> Three Dispatch Patterns &mdash; When to Use Each <span class="label">mechanics</span></h2>
+
+<p>There are three concrete ways a lead session starts. Every lead session ends up using one of them. Understand each before choosing.</p>
+
+<h3>Pattern A — Slash command in a separate terminal (current default for parallel work)</h3>
+
+<div class="figure">
+<svg width="720" height="260" viewBox="0 0 720 260" role="img" aria-label="Two terminals running Aria and Bram in their own worktrees, sharing .gauntlet/ via junction.">
+  <text x="360" y="22" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="13" font-weight="500" text-anchor="middle" fill="#14110d">
+    User opens TWO terminals; each runs Claude Code; each does
+    <tspan font-family="SF Mono, Menlo, Consolas, monospace" font-weight="600">/aria</tspan>
+    or
+    <tspan font-family="SF Mono, Menlo, Consolas, monospace" font-weight="600">/bram</tspan>
+  </text>
+
+  <!-- Terminal 1 (Aria) -->
+  <rect x="60" y="48" width="290" height="166" fill="#ffffff" stroke="#0e7490" stroke-width="1.5" rx="6"/>
+  <rect x="60" y="48" width="290" height="22" fill="#e6f4f6" stroke="#0e7490" stroke-width="1.5" rx="6"/>
+  <rect x="60" y="60" width="290" height="10" fill="#e6f4f6" stroke="none"/>
+  <circle cx="74" cy="59" r="3" fill="#0e7490" opacity="0.5"/>
+  <circle cx="84" cy="59" r="3" fill="#0e7490" opacity="0.3"/>
+  <circle cx="94" cy="59" r="3" fill="#0e7490" opacity="0.2"/>
+  <text x="205" y="63" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" font-weight="600" text-anchor="middle" fill="#0e7490">Terminal 1 · Aria worktree</text>
+
+  <text x="76" y="92"  font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#6f6a62"><tspan fill="#908a7f">$</tspan> cd ClinicalRedTeam-aria/</text>
+  <text x="76" y="108" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#6f6a62"><tspan fill="#908a7f">$</tspan> claude</text>
+  <text x="76" y="124" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#0e7490"><tspan fill="#908a7f">›</tspan> /aria</text>
+  <line x1="76" y1="138" x2="334" y2="138" stroke="#e3ddd1"/>
+  <text x="205" y="160" font-size="11.5" text-anchor="middle" font-weight="600" fill="#14110d">Aria session ALIVE</text>
+  <text x="76" y="180" font-size="10.5" fill="#6f6a62">— branch: <tspan font-family="SF Mono, Menlo, Consolas, monospace">crt/aria-a4-resume</tspan></text>
+  <text x="76" y="196" font-size="10.5" fill="#6f6a62">— can spawn audit subagents</text>
+
+  <!-- Terminal 2 (Bram) -->
+  <rect x="370" y="48" width="290" height="166" fill="#ffffff" stroke="#15803d" stroke-width="1.5" rx="6"/>
+  <rect x="370" y="48" width="290" height="22" fill="#e8f4ec" stroke="#15803d" stroke-width="1.5" rx="6"/>
+  <rect x="370" y="60" width="290" height="10" fill="#e8f4ec" stroke="none"/>
+  <circle cx="384" cy="59" r="3" fill="#15803d" opacity="0.5"/>
+  <circle cx="394" cy="59" r="3" fill="#15803d" opacity="0.3"/>
+  <circle cx="404" cy="59" r="3" fill="#15803d" opacity="0.2"/>
+  <text x="515" y="63" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" font-weight="600" text-anchor="middle" fill="#15803d">Terminal 2 · Bram worktree</text>
+
+  <text x="386" y="92"  font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#6f6a62"><tspan fill="#908a7f">$</tspan> cd ClinicalRedTeam-bram/</text>
+  <text x="386" y="108" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#6f6a62"><tspan fill="#908a7f">$</tspan> claude</text>
+  <text x="386" y="124" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#15803d"><tspan fill="#908a7f">›</tspan> /bram</text>
+  <line x1="386" y1="138" x2="644" y2="138" stroke="#e3ddd1"/>
+  <text x="515" y="160" font-size="11.5" text-anchor="middle" font-weight="600" fill="#14110d">Bram session ALIVE</text>
+  <text x="386" y="180" font-size="10.5" fill="#6f6a62">— branch: <tspan font-family="SF Mono, Menlo, Consolas, monospace">crt/bram-b7-vuln-polish</tspan></text>
+  <text x="386" y="196" font-size="10.5" fill="#6f6a62">— can spawn audit subagents</text>
+
+  <!-- Shared .gauntlet/ -->
+  <rect x="180" y="226" width="360" height="26" fill="#fef8ec" stroke="#b45309" stroke-width="1.25" rx="4"/>
+  <text x="360" y="244" font-size="11" font-weight="600" fill="#92400e" text-anchor="middle">shared .gauntlet/ via junction — handoffs visible cross-stream</text>
+</svg>
+  <div class="caption">Each lead runs in its own worktree, separately. <strong>True wall-clock parallelism.</strong> User can peek at either terminal. Both see the same <code>.gauntlet/</code> via the Windows junction set up at end of Phase 1a.</div>
+</div>
+
+<table>
+  <tr><th style="width:26%">When this fits</th><th>Why</th></tr>
+  <tr><td>Long-running work (1+ hr per lead)</td><td>You want human visibility into progress; can intervene if a lead goes sideways.</td></tr>
+  <tr><td>Lead might need interactive nudging</td><td>You're at the keyboard and can answer "should I do X or Y?" mid-flight.</td></tr>
+  <tr><td>You want to BE the lead</td><td>You type <code>/aria</code> and become Aria yourself; useful when you want to drive the work directly.</td></tr>
+  <tr><td>Multiple leads working concurrently for hours</td><td>Worktree isolation guarantees no file collisions; branches keep commits separated.</td></tr>
+</table>
+
+<h3>Pattern B — Tate spawns a lead via the <code>Agent</code> tool (delegated subagent)</h3>
+
+<div class="figure">
+<svg width="720" height="270" viewBox="0 0 720 270" role="img" aria-label="Tate spawns Bram subagent via Agent tool with kickoff context.">
+  <defs>
+    <marker id="arrowInk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b3833"/>
+    </marker>
+  </defs>
+
+  <text x="360" y="22" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="13" font-weight="500" text-anchor="middle" fill="#14110d">
+    Tate session calls
+    <tspan font-family="SF Mono, Menlo, Consolas, monospace" font-weight="600">Agent(subagent_type: "bram", run_in_background: true)</tspan>
+  </text>
+
+  <!-- Tate session -->
+  <rect x="220" y="46" width="280" height="68" fill="#fef0e6" stroke="#c2410c" stroke-width="1.5" rx="6"/>
+  <text x="360" y="70" font-size="12.5" font-weight="600" text-anchor="middle" fill="#c2410c">Tate session — main worktree</text>
+  <text x="360" y="89"  font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#3b3833" text-anchor="middle">writes Bram a prompt with context</text>
+  <text x="360" y="105" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" fill="#3b3833" text-anchor="middle">+ kickoff brief + handoff history</text>
+
+  <!-- arrow -->
+  <line x1="360" y1="118" x2="360" y2="146" stroke="#3b3833" stroke-width="1.5" marker-end="url(#arrowInk)"/>
+
+  <!-- Bram subagent -->
+  <rect x="220" y="156" width="280" height="86" fill="#e8f4ec" stroke="#15803d" stroke-width="1.5" rx="6"/>
+  <text x="360" y="178" font-size="12.5" font-weight="600" text-anchor="middle" fill="#15803d">Bram subagent — spawned</text>
+  <text x="360" y="198" font-size="10.5" fill="#3b3833" text-anchor="middle">— loads <tspan font-family="SF Mono, Menlo, Consolas, monospace">bram.md</tspan> kickoff brief</text>
+  <text x="360" y="214" font-size="10.5" fill="#3b3833" text-anchor="middle">— reads <tspan font-family="SF Mono, Menlo, Consolas, monospace">bram-handoff.md</tspan></text>
+  <text x="360" y="230" font-size="10.5" fill="#3b3833" text-anchor="middle">— acts on Tate's prompt + writes new commits</text>
+
+  <!-- side note -->
+  <line x1="510" y1="199" x2="540" y2="199" stroke="#c0b9aa" stroke-width="0.75"/>
+  <text x="690" y="195" font-size="10.5" fill="#6f6a62" text-anchor="end">Bram CAN spawn his own subagents</text>
+  <text x="690" y="210" font-size="10.5" fill="#6f6a62" text-anchor="end">(audit subagents, Explore, Plan…)</text>
+</svg>
+  <div class="caption">Tate's prompt becomes the new directive. Bram reads kickoff + handoff for prior context. Three+ levels of agent nesting are normal: Tate &rarr; Bram &rarr; observability-security-teammate (audit).</div>
+</div>
+
+<table>
+  <tr><th style="width:26%">When this fits</th><th>Why</th></tr>
+  <tr><td>Resuming a lead who ended their session</td><td>The lead is no longer in a terminal; spawning is the only way to restart.</td></tr>
+  <tr><td>Short bounded tasks (single MR scope)</td><td>You can describe the whole task in a paragraph; no need for human-in-the-loop.</td></tr>
+  <tr><td>Overnight / unattended work</td><td>No human awake to dispatch; Tate dispatches autonomously when a blocker clears.</td></tr>
+  <tr><td>Cross-lead coordination Tate can see better</td><td>Tate has full picture (in-flight, handoffs, run artifacts); the lead only sees its own track.</td></tr>
+</table>
+
+<h3>Pattern C — Hybrid (some leads in terminals, others spawned by Tate)</h3>
+
+<p>Aria is running in her terminal on A5. Tate (in main checkout) finishes B6 and dispatches Bram via Agent tool to do B7. <strong>Both run in parallel; no conflict</strong> because Aria's writes go to <code>ClinicalRedTeam-aria/</code> on <code>crt/aria-a5-*</code> and Bram's writes go to <code>ClinicalRedTeam-bram/</code> on <code>crt/bram-b7-*</code>. The shared <code>.gauntlet/</code> junction means both see each other's handoffs in real time.</p>
+
+<div class="box good">
+  <span class="label-tag">Pattern C is the steady state for tonight</span>
+  <p>Aria's terminal is alive on A5 (or wherever she is). When her current MR lands and you want B7 to run in parallel, you tell Tate "dispatch Bram." Tate calls <code>Agent</code> tool. Bram runs autonomously alongside Aria. You watch Aria's terminal; Tate watches Bram. <strong>Two human-visibility points, two delegate-to-Tate points, one shared coordination state.</strong></p>
+</div>
+
+<!-- ===================================================== 3. DECISION MATRIX -->
+<h2><span class="num">03</span> Decision Matrix &mdash; Which Pattern, When <span class="label">copy this to a sticky note</span></h2>
+
+<table class="decision-matrix">
+  <tr><th>Scenario</th><th>Pattern</th><th>Why</th></tr>
+  <tr><td class="scenario">Aria is shipping A1 → A2 → A3 → A4 in sequence; you'll review each MR as it lands</td><td class="pattern">A — Aria's own terminal</td><td>Hour+ scale work; you want to see progress and approve MRs as they appear</td></tr>
+  <tr><td class="scenario">Bram needs to ship B7 (1-hour task) once B6 produces FAIL/PARTIAL</td><td class="pattern">B — Tate spawns</td><td>Single bounded task; resume from his handoff; no human guidance needed</td></tr>
+  <tr><td class="scenario">Overnight: both Aria and Bram should work on their tracks unattended</td><td class="pattern">A — both in their own terminals running <code>/goal</code></td><td>True parallel work; each lead loops through their items; tomorrow morning you review MRs</td></tr>
+  <tr><td class="scenario">Mid-overnight Tate-watch fires: B6 produced a signal that unblocks Bram</td><td class="pattern">B — Tate spawns Bram</td><td>Bram's session ended hours ago; he needs to be revived with new context</td></tr>
+  <tr><td class="scenario">You want to make a small change yourself in Aria's files (one-off bug fix)</td><td class="pattern">A — open <code>/aria</code> in her worktree, BE her</td><td>You're directly editing; no need to spawn a subagent; you control commit + push</td></tr>
+  <tr><td class="scenario">Aria gets stuck and asks a question Bram could answer</td><td class="pattern">Aria spawns a Bram consult subagent</td><td><strong>Only works if Aria is herself running Pattern A</strong> (slash command in her terminal — she has <code>Agent</code> tool). A Pattern-B-spawned Aria cannot do this. The consult-Bram is ephemeral; he doesn't ship code.</td></tr>
+  <tr><td class="scenario">Lead's audit-each-step before committing code</td><td class="pattern">A — required</td><td>The committing lead spawns <code>observability-security-teammate</code> (or equivalent) as their own subagent. <strong>Pattern B leads CANNOT do this</strong> — they lack the <code>Agent</code> tool. 3-level nesting (Tate &rarr; lead &rarr; auditor) requires the lead to be in Pattern A.</td></tr>
+  <tr><td class="scenario">Tate spawns Bram (Pattern B) to ship a CODE commit</td><td class="pattern">B + Tate audits</td><td>Bram commits to a local feature branch without pushing. Reports back to Tate. Tate (who DOES have <code>Agent</code>) spawns the audit subagent on Bram's branch. Tate addresses findings (direct edit or re-spawn Bram). Push after audit clears. More complex than Pattern A; preserves audit discipline.</td></tr>
+</table>
+
+<!-- ===================================================== 4. WORKTREE QUESTION -->
+<h2><span class="num">04</span> "Do Subagents Still Use Separate Worktrees + Branches?" <span class="label">yes, with two subtleties</span></h2>
+
+<div class="box warn">
+  <span class="label-tag">Corrigendum 2026-05-12</span>
+  <p>The original version of this section described Pattern A and Pattern B as having equivalent tool palettes. <strong>That was wrong.</strong> Empirical testing (Cleo spawned via Pattern B, verbatim tool-palette inventory) confirmed that <strong>Pattern-B-spawned leads do NOT have the <code>Agent</code> tool</strong> &mdash; they cannot spawn their own subagents. This affects the audit-each-step discipline materially. Section 4 + the decision matrix in Section 3 + Best Practice 3 have all been updated to reflect this; the Quick Reference Card and Section 10 summary are revised accordingly.</p>
+</div>
+
+<p>Short answer: <strong>yes for branches; the worktree depends on how the lead was spawned. AND the lead's tool palette also depends on how they were spawned</strong> &mdash; which materially affects whether they can audit their own work.</p>
+
+<h3>Tool palette asymmetry &mdash; Pattern A vs Pattern B</h3>
+
+<table>
+  <tr><th>Capability</th><th>Pattern A (slash command)</th><th>Pattern B (Tate spawns)</th></tr>
+  <tr><td>File edits / shell / git operations</td><td>✓</td><td>✓</td></tr>
+  <tr><td>Invoke <code>Skill</code> (load guidance into own context)</td><td>✓</td><td>✓</td></tr>
+  <tr><td>Run <code>simplify</code> / <code>agent-review</code> / <code>ai-security-review</code> skills</td><td>✓</td><td>✓</td></tr>
+  <tr><td>Spawn independent audit subagent (<code>observability-security-teammate</code>, <code>Explore</code>, <code>Plan</code>, fresh <code>claude</code>)</td><td>✓</td><td><strong>✗</strong></td></tr>
+  <tr><td>Ask user a question (<code>AskUserQuestion</code>)</td><td>✓</td><td>✗</td></tr>
+  <tr><td>Use plan mode (<code>EnterPlanMode</code>)</td><td>✓</td><td>✗</td></tr>
+</table>
+
+<p><strong>Skill-based "audits" are not a substitute.</strong> A Pattern-B lead can invoke <code>ai-security-review</code> as a skill, but a skill loads guidance into the <em>same</em> agent's context &mdash; it's self-review with a framework, not independent review. The <code>w3-audit-each-step</code> memory entry specifies "independent subagent." A skill doesn't satisfy that.</p>
+
+<p><strong>Empirically verified, not just claimed.</strong> Two consecutive Cleo dispatches via Pattern B (different sessions, different prompts) both returned the same top-of-prompt tool list: <code>Bash, Edit, Glob, Grep, Read, ShareOnboardingGuide, Skill, ToolSearch, Write</code>. No <code>Agent</code> anywhere. The second dispatch explicitly attempted the literal <code>Agent(subagent_type: "Explore", ...)</code> call and reported "cannot invoke &mdash; Agent tool name is not in my tool palette." The harness's anti-recursion guard is the cause.</p>
+
+<h3>The two worktree scenarios</h3>
+
+<div class="twocol">
+  <div class="platform">
+    <h4 style="color: var(--platform)">Lead in their own terminal (Pattern A)</h4>
+    <p>Working directory <strong>IS</strong> the lead's worktree. <code>git status</code> from inside reflects the worktree's branch. Commits go on <code>crt/&lt;lead&gt;-*</code> branches as designed. <strong>This is the cleanest case.</strong></p>
+    <pre>cd C:/Dev/GauntletAI/ClinicalRedTeam-bram
+claude                                  # session starts here
+/bram                                   # loads Bram persona
+# everything just works</pre>
+  </div>
+  <div class="coord">
+    <h4 style="color: var(--tate)">Lead spawned by Tate (Pattern B)</h4>
+    <p>The spawned Bram inherits Tate's working directory &mdash; the <strong>main checkout</strong>, NOT the Bram worktree. Bram's persona instructs him to write to his worktree via absolute paths (this exact scenario already happened with Bram session 1; his handoff documents it).</p>
+    <pre># Tate's session is in C:/Dev/GauntletAI/ClinicalRedTeam/
+# Tate calls Agent(subagent_type: "bram", ...)
+# Bram-subagent's CWD is also C:/Dev/GauntletAI/ClinicalRedTeam/
+# Bram routes writes to ClinicalRedTeam-bram/ via absolute paths
+# and commits land on crt/bram-* in that worktree</pre>
+  </div>
+</div>
+
+<div class="box warn">
+  <span class="label-tag">The hidden subtlety</span>
+  <p>When Tate spawns Bram (Pattern B), Bram's CWD is Tate's CWD. This works because <strong>git operations don't actually require <code>cd</code></strong> &mdash; <code>git -C &lt;path&gt; &lt;op&gt;</code> works from anywhere. Bram session 1's handoff explicitly notes this happened and the pattern worked:</p>
+  <blockquote>
+    "<code>/bram</code> was invoked from main checkout instead of <code>ClinicalRedTeam-bram/</code>. All edits, commits, and pushes were routed through absolute worktree paths so commits landed on <code>crt/bram-*</code> branches in the correct worktree."
+  </blockquote>
+  <p style="margin-top: 10px"><strong>Translation:</strong> if you spawn Bram from Tate, Bram still commits to <code>crt/bram-*</code> branches in the Bram worktree. Just by absolute paths instead of <code>cd</code>. <strong>Branches stay separated; worktrees stay separated.</strong> The only difference is which session physically launched Bram.</p>
+</div>
+
+<h3>Why worktrees + branches stay separate always</h3>
+
+<ul>
+  <li><strong>Git branch state is per-checkout.</strong> Two sessions can't have different branches checked out in the same dir at once. Worktrees fix this.</li>
+  <li><strong>Working tree changes race.</strong> If Aria is editing <code>src/clinical_redteam/agents/orchestrator.py</code> and Bram (in the same dir) reads it for an audit, Bram might see a half-saved state. Worktrees isolate.</li>
+  <li><strong>Test runs collide.</strong> <code>pytest</code> writes <code>.pytest_cache/</code>; concurrent runs in the same dir conflict. Worktrees give each lead their own.</li>
+  <li><strong>Branch ownership is the contract.</strong> Every lead commit goes on <code>crt/&lt;lead&gt;-*</code>. MRs are scoped to the lead. Reviewers know who owns what without reading commit messages.</li>
+</ul>
+
+<!-- ===================================================== 5. COMMUNICATION CHANNELS -->
+<h2><span class="num">05</span> Communication Channels &mdash; How Leads Actually Talk <span class="label">filesystem state IS the message bus</span></h2>
+
+<div class="figure">
+<svg width="720" height="400" viewBox="0 0 720 400" role="img" aria-label="Communication via shared .gauntlet/week3/ filesystem state.">
+  <defs>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#92400e"/>
+    </marker>
+    <marker id="arrowSoft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9a948a"/>
+    </marker>
+  </defs>
+
+  <!-- Tate -->
+  <rect x="300" y="24" width="120" height="48" fill="#fef0e6" stroke="#c2410c" stroke-width="1.5" rx="4"/>
+  <text x="360" y="53" font-size="13" font-weight="600" text-anchor="middle" fill="#c2410c">Tate</text>
+
+  <!-- Aria + Bram -->
+  <rect x="74" y="124" width="140" height="56" fill="#e6f4f6" stroke="#0e7490" stroke-width="1.5" rx="4"/>
+  <text x="144" y="148" font-size="12.5" font-weight="600" text-anchor="middle" fill="#0e7490">Aria</text>
+  <text x="144" y="165" font-size="10.5" fill="#6f6a62" text-anchor="middle">in own worktree</text>
+
+  <rect x="506" y="124" width="140" height="56" fill="#e8f4ec" stroke="#15803d" stroke-width="1.5" rx="4"/>
+  <text x="576" y="148" font-size="12.5" font-weight="600" text-anchor="middle" fill="#15803d">Bram</text>
+  <text x="576" y="165" font-size="10.5" fill="#6f6a62" text-anchor="middle">in own worktree</text>
+
+  <!-- Shared message bus = .gauntlet -->
+  <rect x="160" y="230" width="400" height="156" fill="#fef8ec" stroke="#b45309" stroke-width="1.5" rx="6"/>
+  <text x="360" y="257" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="14" font-weight="600" fill="#92400e" text-anchor="middle">.gauntlet/week3/ — shared via junction</text>
+  <text x="360" y="273" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" fill="#92400e" text-anchor="middle" letter-spacing="0.05em">FILESYSTEM AS MESSAGE BUS</text>
+
+  <rect x="180" y="288" width="170" height="24" fill="#ffffff" stroke="#c0b9aa" rx="3"/>
+  <text x="265" y="304" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10.5" text-anchor="middle" fill="#14110d">in-flight.md</text>
+
+  <rect x="370" y="288" width="170" height="24" fill="#ffffff" stroke="#c0b9aa" rx="3"/>
+  <text x="455" y="304" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" text-anchor="middle" fill="#14110d">handoffs/&lt;lead&gt;-handoff.md</text>
+
+  <rect x="180" y="318" width="170" height="24" fill="#ffffff" stroke="#c0b9aa" rx="3"/>
+  <text x="265" y="334" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" text-anchor="middle" fill="#14110d">coordination/&lt;topic&gt;.md</text>
+
+  <rect x="370" y="318" width="170" height="24" fill="#ffffff" stroke="#c0b9aa" rx="3"/>
+  <text x="455" y="334" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" text-anchor="middle" fill="#14110d">sessions/&lt;date&gt;-&lt;lead&gt;.md</text>
+
+  <rect x="180" y="348" width="360" height="24" fill="#ffffff" stroke="#c0b9aa" rx="3"/>
+  <text x="360" y="364" font-family="SF Mono, Menlo, Consolas, monospace" font-size="10" text-anchor="middle" fill="#14110d">candidates/_candidates.md (story candidates)</text>
+
+  <!-- Tate to leads -->
+  <line x1="320" y1="72" x2="214" y2="124" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowSoft)"/>
+  <line x1="400" y1="72" x2="506" y2="124" stroke="#9a948a" stroke-width="1" marker-end="url(#arrowSoft)"/>
+
+  <!-- Leads to bus + bus to leads -->
+  <path d="M 144 180 C 144 210, 240 226, 280 230" stroke="#92400e" stroke-width="1.25" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M 576 180 C 576 210, 480 226, 440 230" stroke="#92400e" stroke-width="1.25" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M 360 72 C 360 130, 360 190, 360 230" stroke="#92400e" stroke-width="1.25" fill="none" marker-end="url(#arrowAmber)"/>
+
+  <text x="170" y="210" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="11" font-style="italic" fill="#92400e">reads + writes</text>
+  <text x="528" y="210" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="11" font-style="italic" fill="#92400e">reads + writes</text>
+</svg>
+  <div class="caption">No agent talks to another directly. All communication is via filesystem state under <code>.gauntlet/week3/</code>, shared across worktrees by Windows junctions. Like the platform's persistence layer — durable, observable, resumable.</div>
+</div>
+
+<table>
+  <tr><th>Channel</th><th>Used for</th><th>Who writes</th><th>Who reads</th></tr>
+  <tr><td><code>in-flight.md</code> "In Flight" table</td><td>Current lead status, branches in flight, blockers</td><td>Any lead before / after session</td><td>Tate primarily; leads at start to know cross-stream state</td></tr>
+  <tr><td><code>handoffs/&lt;lead&gt;-handoff.md</code></td><td>Per-lead session log; newest entry at top</td><td>The owning lead at end of each session</td><td>Same lead at start of next session; Tate when checking progress</td></tr>
+  <tr><td><code>coordination/&lt;topic&gt;-from-to.md</code></td><td>Cross-lead asks, ticket-like; one topic per file</td><td>Whichever lead raises the cross-cutting concern</td><td>The asked-lead reads on their next session; Tate scans periodically</td></tr>
+  <tr><td><code>sessions/&lt;date&gt;-&lt;lead&gt;.md</code></td><td>Substantive session recaps (longer than a handoff entry)</td><td>Tate primarily, occasionally leads for notable sessions</td><td>Anyone reviewing later, including interview prep</td></tr>
+  <tr><td><code>candidates/_candidates.md</code></td><td>Story candidates &mdash; interview-worthy moments</td><td>Tate (and leads when something genuinely novel happens)</td><td>User on next <code>/story</code> prompt</td></tr>
+</table>
+
+<!-- ===================================================== 6. PITFALLS -->
+<h2><span class="num">06</span> Pitfalls We've Hit (or Could Hit) <span class="label">avoid these</span></h2>
+
+<div class="box bad">
+  <span class="label-tag">Pitfall 1</span>
+  <strong>Double-dispatching the same lead.</strong>
+  <p>If you have Bram running in his own terminal AND Tate spawns Bram via the Agent tool, both Bram sessions will write to <code>bram-handoff.md</code> and <code>in-flight.md</code>. Last writer wins; the other's edits are lost. <strong>Always end the running Bram before spawning a new one.</strong> Bram should write his handoff entry, <code>/clear</code>, close the terminal.</p>
+</div>
+
+<div class="box bad">
+  <span class="label-tag">Pitfall 2</span>
+  <strong>Spawning a lead from a terminal that's NOT in their worktree.</strong>
+  <p>This is permissible (Bram session 1 did it and it worked) but harder &mdash; Bram has to remember to route every write via absolute paths. If he ever does a plain <code>git commit</code>, it commits to whatever branch is checked out where you are, not his branch. Prefer Pattern A (slash command in the lead's worktree) when you have the option. Reserve Pattern B for resume / continuation / overnight scenarios.</p>
+</div>
+
+<div class="box bad">
+  <span class="label-tag">Pitfall 3</span>
+  <strong>Subagent context bloat from deep nesting.</strong>
+  <p>Tate &rarr; Aria &rarr; audit-subagent is 3 levels. Each level has its own context window. If Aria's audit-subagent itself spawns ANOTHER subagent (4 levels), token cost compounds. In practice 3 levels is fine; 4+ should be a deliberate choice. The audit-each-step memory entry already scopes this: leads spawn ONE auditor per item, not nested.</p>
+</div>
+
+<div class="box bad">
+  <span class="label-tag">Pitfall 4</span>
+  <strong>Forgetting to end-of-session write a handoff.</strong>
+  <p>If Aria's terminal crashes / power dies / <code>Ctrl+C</code> before she writes her handoff, the next Aria session has no idea where she left off &mdash; she has to derive it from <code>git log</code> + commit messages. Discipline: <strong>Every lead writes a handoff entry BEFORE <code>/clear</code> or terminal close.</strong> Kickoff briefs already say this; reinforce it in every dispatch prompt.</p>
+</div>
+
+<div class="box bad">
+  <span class="label-tag">Pitfall 5</span>
+  <strong>Letting Tate forget to coordinate.</strong>
+  <p>You discovered this tonight: Bram ended his goal loop blocked on B6, but no mechanism existed to auto-resume him when B6 finished. <strong>Tate must explicitly read every recent handoff at the start of every session</strong> and check the in-flight Watch List (when we build it). The auto-resume routine (<code>/tate-watch-poll</code>) is the future fix; for now, manual catch-up at each <code>/tate</code> invocation.</p>
+</div>
+
+<div class="box warn">
+  <span class="label-tag">Pitfall 6</span>
+  <strong>Schema or scope changes from an autonomous lead.</strong>
+  <p>Aria's autonomous-mode discipline says "stop and write coordination if a Pydantic schema change is required." This works only if Aria actually stops &mdash; if a future lead "fixes" something by editing schemas.py without sign-off, the inter-agent contract drifts. Audit-each-step is the gate that catches this; never weaken it. <em>Tate has the equivalent rule for content_filter weakening.</em></p>
+</div>
+
+<!-- ===================================================== 7. BEST PRACTICES -->
+<h2><span class="num">07</span> Best Practices &mdash; Distilled <span class="label">do these by default</span></h2>
+
+<div class="box good">
+  <span class="label-tag">Practice 1</span>
+  <strong>Default to Pattern A for parallel multi-hour work, Pattern B for resume / short-bounded / unattended.</strong>
+  <p>The mental check: "is a human going to be at the keyboard for the next hour while this lead works?" Yes &rarr; Pattern A. No &rarr; Pattern B.</p>
+</div>
+
+<div class="box good">
+  <span class="label-tag">Practice 2</span>
+  <strong>Worktrees + branches always separate, regardless of dispatch pattern.</strong>
+  <p>The branch policy in <code>w3-branch-policy-by-phase</code> memory ("Phase 1b onward: feature branches + auto-MR mandatory") + the worktree topology you set up are the load-bearing isolation. Don't collapse them for short-term convenience.</p>
+</div>
+
+<div class="box good">
+  <span class="label-tag">Practice 3</span>
+  <strong>Audit-each-step is non-skippable — and requires Pattern A for code commits.</strong>
+  <p>Every code commit goes through an independent audit subagent before commit. 3-level nesting (Tate &rarr; lead &rarr; auditor) only works if the lead has the <code>Agent</code> tool &mdash; which means Pattern A. <strong>Pattern-B-spawned leads cannot spawn auditors</strong> (verified empirically; see Section 4). For Pattern-B code work, either use Pattern A instead, or have Tate spawn the audit subagent on the lead's pre-push branch. The <code>w3-audit-each-step</code> memory entry encodes the discipline; <code>w3-pattern-b-no-subagent-spawning</code> encodes the constraint.</p>
+</div>
+
+<div class="box good">
+  <span class="label-tag">Practice 4</span>
+  <strong>End every lead session with a handoff entry. Always.</strong>
+  <p>Format already exists in <code>handoffs/&lt;lead&gt;-handoff.md</code>. Newest entry at top. Two fields are non-negotiable: "items in progress" and "recommended next action." The next session reads these and knows where to start.</p>
+</div>
+
+<div class="box good">
+  <span class="label-tag">Practice 5</span>
+  <strong>Tate reads everything at the start of every <code>/tate</code> session.</strong>
+  <p>Tate's kickoff already says so: read CLAUDE_SESSION_HANDOFF.md, MVP-WORK-PLAN.md, in-flight.md, latest session recap, each lead handoff. <strong>Don't shortcut this.</strong> The cost (5 min of reads at session start) is the price of cross-stream coordination working at all.</p>
+</div>
+
+<div class="box good">
+  <span class="label-tag">Practice 6</span>
+  <strong>When a lead is blocked, write a Watch List row.</strong>
+  <p>Append to <code>in-flight.md</code> under "Watch List" with: lead name, blocker condition (filesystem-checkable), watch file path, target item to resume. Tomorrow's <code>/tate-watch-poll</code> routine (when built) will read these; until then, Tate at the start of each session.</p>
+</div>
+
+<div class="box good">
+  <span class="label-tag">Practice 7</span>
+  <strong>Match the dispatch's persona to the work.</strong>
+  <p>Don't ask Aria to write eval YAMLs (Bram's territory). Don't ask Bram to write Python agent code (Aria's territory). The persona file enforces ownership; the kickoff brief tells the lead what's in and out of scope. If a task crosses ownership, raise via <code>coordination/</code> rather than violating the boundary.</p>
+</div>
+
+<!-- ===================================================== 8. QUICK REFERENCE -->
+<h2><span class="num">08</span> Quick Reference Card <span class="label">copy + pin</span></h2>
+
+<div class="qref">
+<span class="qcomment"># Open a lead in their own terminal (Pattern A)</span>
+<span class="qkey">cd</span> <span class="qval">C:/Dev/GauntletAI/ClinicalRedTeam-aria/</span>     <span class="qcomment"># or -bram, -cleo</span>
+<span class="qkey">claude</span>                                  <span class="qcomment"># new Claude Code session</span>
+<span class="qkey">/aria</span>                                   <span class="qcomment"># or /bram, /cleo — loads persona + kickoff + handoff</span>
+
+<span class="qcomment"># Spawn a lead from Tate (Pattern B — for read-only / coord / docs)</span>
+<span class="qcomment"># NOTE: Pattern B leads cannot spawn audit subagents (no Agent tool).</span>
+<span class="qcomment"># For code commits use Pattern A above, OR have Tate audit the branch.</span>
+<span class="qval">Agent(</span>
+  <span class="qkey">subagent_type:</span> <span class="qval">"bram",</span>        <span class="qcomment"># or "aria", "cleo"</span>
+  <span class="qkey">run_in_background:</span> <span class="qval">true,</span>       <span class="qcomment"># lets Tate keep working</span>
+  <span class="qkey">prompt:</span> <span class="qval">"""Read-only inventory: list current Phase 2 deliverable files..."""</span>
+<span class="qval">)</span>
+
+<span class="qcomment"># Every lead, every session-end, ALWAYS:</span>
+<span class="qval">Write a new entry to .gauntlet/week3/handoffs/&lt;lead&gt;-handoff.md (newest at top).</span>
+<span class="qval">Update .gauntlet/week3/in-flight.md "In Flight" row.</span>
+<span class="qval">Then /clear or exit.</span>
+
+<span class="qcomment"># Every lead, every code commit, BEFORE pushing:</span>
+<span class="qval">Spawn an audit subagent (observability-security-teammate or quality-lead).</span>
+<span class="qval">Address every CRITICAL / MEDIUM finding (and LOW unless explicitly skipped).</span>
+<span class="qval">THEN commit + push with auto-MR flags.</span>
+
+<span class="qcomment"># Branch + push pattern (lead workflow):</span>
+<span class="qkey">git checkout -b</span> <span class="qval">crt/&lt;lead&gt;-&lt;item-id&gt;-&lt;short-desc&gt;</span>
+<span class="qcomment"># ... do work, run tests, audit ...</span>
+<span class="qkey">git push -u origin</span> <span class="qval">crt/...</span> <span class="qval">\\</span>
+  <span class="qkey">-o</span> <span class="qval">merge_request.create</span> <span class="qval">\\</span>
+  <span class="qkey">-o</span> <span class="qval">merge_request.target=main</span> <span class="qval">\\</span>
+  <span class="qkey">-o</span> <span class="qval">merge_request.remove_source_branch=true</span>
+
+<span class="qcomment"># Cross-lead ask (raised by anyone, read by the asked lead):</span>
+<span class="qval">Write .gauntlet/week3/coordination/&lt;topic&gt;-&lt;from&gt;-to-&lt;to&gt;.md</span>
+<span class="qval">Severity, owner, proposed fix, regression tests.</span>
+<span class="qval">No commit needed — .gauntlet/ is gitignored, shared via junction.</span>
+</div>
+
+<!-- ===================================================== 9. WHAT WE LIVED THROUGH TONIGHT -->
+<h2><span class="num">09</span> Worked Example &mdash; What We Lived Through Tonight <span class="label">2026-05-12 overnight</span></h2>
+
+<ol>
+  <li><strong>End of Phase 1a:</strong> Tate (solo) shipped 14 of 15 items, all on <code>main</code> direct (permitted exception for Phase 1a). 144 tests passing. SSH tunnel up; live target verified end-to-end.</li>
+  <li><strong>Branch policy flipped:</strong> <code>w3-branch-policy-by-phase</code> memory committed; <code>.claude/settings.local.json</code> revoked direct-to-main push permission; added <code>crt/*</code> + auto-MR flag rules.</li>
+  <li><strong>Worktrees set up:</strong> <code>ClinicalRedTeam-aria/</code> and <code>ClinicalRedTeam-bram/</code> with shared <code>.gauntlet/</code> + <code>.claude/</code> via Windows junctions. Each got its own venv. 144 tests pass in each.</li>
+  <li><strong>Pattern A overnight:</strong> You dispatched <code>/aria</code> and <code>/bram</code> via slash command in separate terminals, both running <code>/goal</code>. They worked truly in parallel.</li>
+  <li><strong>Aria shipped A1, A2, A3, A4</strong> &mdash; each audited by <code>observability-security-teammate</code> before commit. A1's audit caught a real PHI-leak path in <code>Evidence.matched_text</code>. Audit-each-step paid for itself on the first item.</li>
+  <li><strong>Bram shipped B2, B3, B1, B4, B5</strong> &mdash; B1/B4/B5 audited by Explore agent before commit; B2/B3 retrospectively audited. He hit B7 (VULN-001 polish) blocked on Tate's B6 and ended his goal loop &mdash; <strong>this is where the gap was.</strong> No mechanism to auto-resume him.</li>
+  <li><strong>You manually merged 10 MRs</strong> on GitLab in order they came in. No conflicts because file ownership held: Aria touched only <code>src/</code>, Bram touched only <code>evals/</code>, Tate touched only <code>docs/</code>.</li>
+  <li><strong>Tate (current session) shipped B6 twice:</strong> run-1 ($0.07, 10 SID attacks, 1 content-filter pre-flight refusal in production), run-2 ($0.30, 30 attacks across all 3 categories, all PASS). C-7 didn't rediscover; PRD HARD GATE (flow works) is satisfied.</li>
+  <li><strong>Coordination tickets:</strong> 4 audit-finding files filed to <code>coordination/</code> for Aria post-A4 (MEDIUM content_filter year-only DOB gap, MEDIUM A4 resume coverage reconciliation bug, plus 3 LOWs).</li>
+  <li><strong>Story candidate captured</strong> for the orchestration-similarity insight.</li>
+  <li><strong>Tool-palette asymmetry discovered:</strong> empirical test (Cleo spawned via Pattern B) confirmed spawned leads lack the <code>Agent</code> tool. Two consecutive dispatches both returned the same restricted palette. <strong>Audit-each-step discipline now requires Pattern A for code commits</strong>; Pattern B is for read-only / coordination / docs work or code work where Tate supervises the audit. Corrigendum + tool palette table added to Section 4; Best Practice 3 + Section 10 summary revised; new memory entry <code>w3-pattern-b-no-subagent-spawning</code> committed.</li>
+</ol>
+
+<div class="box info">
+  <span class="label-tag">What worked</span>
+  <p>Pattern A overnight with worktrees + audit-each-step delivered all of Phase 1b's code and content with zero file conflicts and a real PHI-leak caught before ship. The branch policy + autonomous-mode operating discipline + handoff schema were the load-bearing pieces.</p>
+</div>
+
+<div class="box warn">
+  <span class="label-tag">What didn't</span>
+  <p>The gap between "Bram ends loop blocked on B6" and "B6 finishes" had no auto-resume mechanism. <strong>This is exactly the failure mode ARCH §10.2 predicts for the platform itself.</strong> The fix is the <code>/tate-watch-poll</code> routine (built post-MVP). Until then: Tate at the start of each session manually scans the in-flight Watch List and re-dispatches via Pattern B.</p>
+</div>
+
+<!-- ===================================================== 10. WHAT TO DO NOW -->
+<h2><span class="num">10</span> What to Do Going Forward <span class="label">putting it into practice</span></h2>
+
+<ol>
+  <li><strong>Today (MVP push):</strong> Continue Pattern A for whatever Aria + Bram have left. Tate uses Pattern B to dispatch Bram for B7 when B6 produces a verdict good enough OR when accepting the backup story.</li>
+  <li><strong>Tomorrow morning (Wed):</strong> Read all four handoffs at the start of <code>/tate</code>. Flip Watch List rows that resolved. Dispatch Cleo for Phase 2 via Pattern A (give her a fresh worktree).</li>
+  <li><strong>This week:</strong> If you build <code>/tate-watch-poll</code>, reuse <code>persistence.atomic_write_json</code> + the halt-evaluation pattern from <code>OrchestratorDaemon</code>. Don't reinvent &mdash; the platform's primitives are right.</li>
+  <li><strong>Next project:</strong> Carry the agent-team setup forward (project memory <code>gauntlet-onedrive-backup-pattern</code> already documents the bootstrap). Adjust the lead count + names; keep the dispatch patterns + audit discipline + handoff schema.</li>
+  <li><strong>Interview defense:</strong> The platform's Orchestrator design is validated by your own lived experience coordinating leads. ARCH §10.2 failure modes are real-world generalizable, not hypothetical. Use this when defending architectural choices.</li>
+</ol>
+
+<div class="summary">
+  <span class="label">The one-sentence summary if you remember nothing else</span>
+  <p><em>Pattern A for code commits and anything requiring an independent audit subagent. Pattern B for read-only inventory, coordination, docs polish, or code work where Tate supervises the audit. Worktrees + branches + handoffs the same across both; <strong>filesystem state is the message bus</strong>.</em></p>
+</div>
+
+</div>
+</body>
+</html>
