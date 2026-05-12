@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clinical Red Team Platform — W3 Lead Plan</title>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --surface: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #e5e5e0;
+    --line-strong: #c8c8c0;
+    --code-bg: #f3f3ef;
+
+    --tate: #c2410c;    /* burnt orange */
+    --aria: #0e7490;    /* teal */
+    --bram: #15803d;    /* green */
+    --cleo: #9333ea;    /* magenta */
+
+    --done: #15803d;
+    --done-bg: #ecfdf5;
+    --deferred: #6b6b6b;
+    --deferred-bg: #f3f3ef;
+    --ready: #1d4ed8;
+    --ready-bg: #eff6ff;
+    --blocked: #b91c1c;
+    --blocked-bg: #fef2f2;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  code, .mono {
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  a { color: #1d4ed8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* layout */
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+
+  header.banner {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  header.banner h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  header.banner .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  header.banner .deadlines {
+    text-align: right;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  header.banner .deadlines .label { display: inline-block; min-width: 80px; }
+  header.banner .deadlines strong { color: var(--ink); font-weight: 600; }
+
+  /* status row */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  .stat .sub { font-size: 12px; color: var(--muted); }
+
+  /* tabs */
+  nav.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line-strong);
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  nav.tabs button {
+    border: none;
+    background: none;
+    padding: 10px 16px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  nav.tabs button:hover { color: var(--ink); }
+  nav.tabs button.active {
+    color: var(--ink);
+    border-bottom-color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* phase / lead sections */
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  h2.phase {
+    font-size: 17px;
+    margin: 28px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+  }
+  h2.phase .subtitle {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 13px;
+    margin-left: 12px;
+  }
+
+  h3.track {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 24px 0 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h3.track .lead-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: 0;
+    color: white;
+    font-weight: 600;
+  }
+  h3.track .lead-pill.tate { background: var(--tate); }
+  h3.track .lead-pill.aria { background: var(--aria); }
+  h3.track .lead-pill.bram { background: var(--bram); }
+  h3.track .lead-pill.cleo { background: var(--cleo); }
+
+  /* item card */
+  .item {
+    display: grid;
+    grid-template-columns: 64px 1fr 110px 110px;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left-width: 4px;
+    border-radius: 5px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .item.lead-tate { border-left-color: var(--tate); }
+  .item.lead-aria { border-left-color: var(--aria); }
+  .item.lead-bram { border-left-color: var(--bram); }
+  .item.lead-cleo { border-left-color: var(--cleo); }
+
+  .item .id {
+    padding: 12px 10px;
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    border-right: 1px solid var(--line);
+    text-align: center;
+  }
+  .item .body {
+    padding: 12px 16px;
+    min-width: 0;
+  }
+  .item .title {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .item .meta {
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .item .meta .meta-label { color: var(--ink); font-weight: 500; }
+  .item .effort {
+    padding: 12px 10px;
+    font-size: 12.5px;
+    color: var(--muted);
+    border-left: 1px solid var(--line);
+    text-align: center;
+    align-self: center;
+  }
+  .item .effort .num { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .item .status-cell {
+    padding: 12px 10px;
+    border-left: 1px solid var(--line);
+    text-align: center;
+    align-self: center;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .badge.done     { background: var(--done-bg); color: var(--done); }
+  .badge.deferred { background: var(--deferred-bg); color: var(--deferred); }
+  .badge.ready    { background: var(--ready-bg); color: var(--ready); }
+  .badge.blocked  { background: var(--blocked-bg); color: var(--blocked); }
+
+  /* file ownership block */
+  .ownership {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .ownership .lead-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left-width: 4px;
+    border-radius: 5px;
+    padding: 14px 18px;
+  }
+  .ownership .lead-card.tate { border-left-color: var(--tate); }
+  .ownership .lead-card.aria { border-left-color: var(--aria); }
+  .ownership .lead-card.bram { border-left-color: var(--bram); }
+  .ownership .lead-card.cleo { border-left-color: var(--cleo); }
+  .ownership .lead-card h4 {
+    margin: 0 0 4px;
+    font-size: 15px;
+  }
+  .ownership .lead-card .role {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .ownership .lead-card ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .ownership .lead-card ul code { font-size: 12px; }
+
+  /* overview / kickoff section */
+  .kickoff-block {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+  }
+  .kickoff-block h3 { margin: 0 0 8px; font-size: 15px; }
+  .kickoff-block p { margin: 0 0 8px; }
+  .kickoff-block .pointers {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .kickoff-block .pointer {
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .kickoff-block .pointer .pname {
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .kickoff-block .pointer .pdesc {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  /* legend */
+  .legend {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 18px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .legend .item-mini { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .legend .swatch.tate { background: var(--tate); }
+  .legend .swatch.aria { background: var(--aria); }
+  .legend .swatch.bram { background: var(--bram); }
+  .legend .swatch.cleo { background: var(--cleo); }
+
+  @media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .item { grid-template-columns: 50px 1fr; }
+    .item .effort, .item .status-cell { display: none; }
+    .item .body .meta::before { content: ""; }
+    .ownership { grid-template-columns: 1fr; }
+    .kickoff-block .pointers { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="banner">
+  <div>
+    <h1>Clinical Red Team Platform — W3 Lead Plan</h1>
+    <div class="sub">Phase-by-phase work breakdown, by team lead. Companion to <code>docs/MVP-WORK-PLAN.md</code> &middot; <code>CLAUDE_SESSION_HANDOFF.md</code> &middot; <code>.gauntlet/week3/in-flight.md</code>.</div>
+  </div>
+  <div class="deadlines">
+    <div><span class="label">MVP:</span> <strong>Tue 2026-05-13, 11:59 PM</strong></div>
+    <div><span class="label">Demo Day:</span> <strong>Fri 2026-05-16, noon</strong></div>
+    <div><span class="label">Last refresh:</span> 2026-05-12 (end of overnight Tate session)</div>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat">
+    <div class="label">Phase 1a</div>
+    <div class="value">14 / 15</div>
+    <div class="sub">#5 deferred to Phase 1b A6</div>
+  </div>
+  <div class="stat">
+    <div class="label">Phase 1b</div>
+    <div class="value">0 / 17</div>
+    <div class="sub">7 Track A &middot; 7 Track B &middot; 3 Track C</div>
+  </div>
+  <div class="stat">
+    <div class="label">Phase 2</div>
+    <div class="value">0 / 9</div>
+    <div class="sub">P1&ndash;P9 (Cleo + Tate)</div>
+  </div>
+  <div class="stat">
+    <div class="label">Tests passing</div>
+    <div class="value">144</div>
+    <div class="sub">live target verified end-to-end</div>
+  </div>
+</div>
+
+<div class="legend">
+  <span class="item-mini"><span class="swatch tate"></span> Tate (Director / Coordination)</span>
+  <span class="item-mini"><span class="swatch aria"></span> Aria (Implementation)</span>
+  <span class="item-mini"><span class="swatch bram"></span> Bram (Quality + Eval Content)</span>
+  <span class="item-mini"><span class="swatch cleo"></span> Cleo (Delivery + Polish)</span>
+</div>
+
+<nav class="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="phase1a">Phase 1a</button>
+  <button data-tab="phase1b">Phase 1b</button>
+  <button data-tab="phase2">Phase 2</button>
+  <button data-tab="byLead">By Lead</button>
+  <button data-tab="ownership">File Ownership</button>
+</nav>
+
+<!-- ============================================================ OVERVIEW -->
+<section class="pane active" id="overview">
+
+  <div class="kickoff-block">
+    <h3>Current state — end of Phase 1a Tate session (2026-05-12)</h3>
+    <p><strong>Phase 1a is complete.</strong> The vertical slice runs end-to-end against the live, SSH-tunneled deployed Co-Pilot. One green run on disk at <code>evals/results/20260512T055251-4675cd/</code> &mdash; attack saved, verdict saved (PASS @ 0.95 confidence), HTTP 200 from target, $0.0065 total cost. 144 tests passing.</p>
+    <p>Branch policy has flipped: code commits from here on go on <code>crt/&lt;desc&gt;</code> feature branches with auto-MR flags. Direct-to-main is now reserved for documentation / handoff regeneration only.</p>
+  </div>
+
+  <div class="kickoff-block">
+    <h3>What to open first (next session)</h3>
+    <div class="pointers">
+      <div class="pointer">
+        <div class="pname">CLAUDE_SESSION_HANDOFF.md</div>
+        <div class="pdesc">Canonical pickup point — Phase 1a recap + Phase 1b dispatch instructions.</div>
+      </div>
+      <div class="pointer">
+        <div class="pname">docs/MVP-WORK-PLAN.md</div>
+        <div class="pdesc">Sequenced work-item plan with effort / dependencies / acceptance per item.</div>
+      </div>
+      <div class="pointer">
+        <div class="pname">docs/MVP-WORK-PLAN.html</div>
+        <div class="pdesc">Same content with localStorage checkboxes. Mark items done as you ship.</div>
+      </div>
+      <div class="pointer">
+        <div class="pname">.gauntlet/week3/in-flight.md</div>
+        <div class="pdesc">Live coordination: file locks, who's editing what, cross-workstream notes.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kickoff-block">
+    <h3>Per-lead kickoff briefs</h3>
+    <div class="pointers">
+      <div class="pointer">
+        <div class="pname">.gauntlet/week3/kickoff/tate.md</div>
+        <div class="pdesc">Director (you, when in <code>/tate</code> mode). Coordination + B6 + C1&ndash;C3 + Phase 2 Tate items.</div>
+      </div>
+      <div class="pointer">
+        <div class="pname">.gauntlet/week3/kickoff/aria.md</div>
+        <div class="pdesc">Implementation. Documentation Agent &rarr; Orchestrator &rarr; continuous CLI &rarr; resume + meta-tests + CI gate.</div>
+      </div>
+      <div class="pointer">
+        <div class="pname">.gauntlet/week3/kickoff/bram.md</div>
+        <div class="pdesc">Quality + Eval Content. PI/UC/SID seeds, Judge criteria YAMLs, VULN-001 polish.</div>
+      </div>
+      <div class="pointer">
+        <div class="pname">.gauntlet/week3/kickoff/cleo.md</div>
+        <div class="pdesc">Delivery + Polish (Phase 2). Dashboard, cost analysis, README/SETUP, demo script.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kickoff-block">
+    <h3>Where to dispatch the leads (Phase 1b)</h3>
+    <p><strong>Aria + Bram in parallel</strong> &mdash; either as background agents via the <code>Agent</code> tool with <code>isolation: "worktree"</code>, OR by opening two terminals in worktrees and running <code>/aria</code> and <code>/bram</code>.</p>
+    <p>Aria&apos;s sequence (Track A): A1 &rarr; A2 &rarr; A3 &rarr; A4 &rarr; A5 &rarr; A6 &rarr; A7. Bram&apos;s sequence (Track B): B2 &rarr; B3 &rarr; B1 &rarr; B4 &rarr; B5 &rarr; B7.</p>
+    <p><strong>Tate keeps</strong> B6 (continuous-mode run), C1 (README), C2 (SETUP), C3 (submission).</p>
+  </div>
+
+</section>
+
+<!-- ============================================================ PHASE 1A -->
+<section class="pane" id="phase1a">
+  <h2 class="phase">Phase 1a — Solo Tate <span class="subtitle">Sun late + Mon &middot; foundation modules &middot; 14 / 15 shipped (#5 deferred)</span></h2>
+
+  <div class="item lead-tate">
+    <div class="id">#1</div>
+    <div class="body">
+      <div class="title">First commit of existing docs</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>a774d2d</code></div>
+    </div>
+    <div class="effort"><div class="num">15m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#2</div>
+    <div class="body">
+      <div class="title">GitLab + GitHub repos &middot; dual-push remote</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>a774d2d</code> &middot; <span class="meta-label">URLs:</span> labs.gauntletai.com/coryvandenberg/clinical-redteam &middot; github.com/TradeUpCards/clinical-redteam</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#3</div>
+    <div class="body">
+      <div class="title">Python project scaffold</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>9c0236f</code> &middot; <code>pyproject.toml</code> + <code>requirements.txt</code> + <code>src/clinical_redteam/__init__.py</code></div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#4</div>
+    <div class="body">
+      <div class="title"><code>.env.example</code> &mdash; full var inventory</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>3c16ec3</code> + <code>12f76fb</code> &middot; OpenRouter, models, target HMAC, Langfuse, cost guards, continuous-mode tuning</div>
+    </div>
+    <div class="effort"><div class="num">15m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#5</div>
+    <div class="body">
+      <div class="title"><code>.gitlab-ci.yml</code> initial scaffold</div>
+      <div class="meta"><span class="meta-label">Deferred:</span> lands with Phase 1b A6 (CI gate) so the first pipeline tests something real</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge deferred">Deferred</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#6</div>
+    <div class="body">
+      <div class="title">Pydantic schemas &mdash; 6 inter-agent contracts (ARCH §12)</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>43386e6</code> + <code>e62d7ec</code> &middot; <span class="meta-label">Tests:</span> 12 &middot; <span class="meta-label">Files:</span> <code>src/clinical_redteam/schemas.py</code></div>
+    </div>
+    <div class="effort"><div class="num">1.5h</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#7</div>
+    <div class="body">
+      <div class="title">OpenRouter client wrapper &mdash; tier-based fallback chain</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>29f93e5</code> &middot; <span class="meta-label">Tests:</span> 12 &middot; 429/5xx/connect-error &rarr; next model</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#8</div>
+    <div class="body">
+      <div class="title">HMAC-signed target client &middot; <strong>LIVE VERIFIED</strong></div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>183aec2</code> &middot; <span class="meta-label">Tests:</span> 19 &middot; out-of-scope host refusal, sentinel-PID gate, HMAC scheme matches AgentForge exactly</div>
+    </div>
+    <div class="effort"><div class="num">1.5h</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#9</div>
+    <div class="body">
+      <div class="title">Filesystem persistence &middot; atomic writes &middot; resume support</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>e3111eb</code> &middot; <span class="meta-label">Tests:</span> 17 &middot; <code>start_run</code> / <code>resume_run</code>, manifest, simulated-crash test</div>
+    </div>
+    <div class="effort"><div class="num">45m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#10</div>
+    <div class="body">
+      <div class="title">Hard content category filter (ARCH §2.1)</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>e39900a</code> &middot; <span class="meta-label">Tests:</span> 26 &middot; minors, real_phi, weaponized_malware, out_of_scope_redirection</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#11</div>
+    <div class="body">
+      <div class="title">Cost ledger + coverage tracker</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>ea71280</code> &middot; <span class="meta-label">Tests:</span> 22 &middot; per-tier breakdown, soft/hard cap, signal-to-cost ratio</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#12</div>
+    <div class="body">
+      <div class="title">Langfuse observability + PHI scrubber</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>41ea025</code> &middot; <span class="meta-label">Tests:</span> 18 &middot; no-op mode when keys absent, recursive scrub of sentinel-PID / real SSN / name+DOB</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#13</div>
+    <div class="body">
+      <div class="title">Red Team Agent + C-7 seed + SID Judge criteria</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>65f59b4</code> &middot; <span class="meta-label">Tests:</span> 10 &middot; CLI <code>python -m clinical_redteam.agents.red_team --seed c7-paraphrased-leakage</code></div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#14</div>
+    <div class="body">
+      <div class="title">Judge Agent + structured-output + injection defense</div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>ebf9919</code> &middot; <span class="meta-label">Tests:</span> 11 &middot; retry-on-unparseable, confidence threshold, target-response-as-data framing</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">#15</div>
+    <div class="body">
+      <div class="title">End-to-end attack CLI &middot; <strong>LIVE GREEN</strong></div>
+      <div class="meta"><span class="meta-label">SHA:</span> <code>35e73a6</code> &middot; <code>python -m clinical_redteam.run --category sensitive_information_disclosure --max-attacks 1</code> &middot; persisted attack + verdict + cost + coverage</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge done">Done</span></div>
+  </div>
+</section>
+
+<!-- ============================================================ PHASE 1B -->
+<section class="pane" id="phase1b">
+  <h2 class="phase">Phase 1b — Tate + 2 leads <span class="subtitle">Tue all day &middot; full 4-agent system + continuous-mode daemon + 3 categories + VULN-001 drafted &middot; 0 / 17 shipped</span></h2>
+
+  <h3 class="track">Track A &middot; Implementation <span class="lead-pill aria">Aria</span></h3>
+
+  <div class="item lead-aria">
+    <div class="id">A1</div>
+    <div class="body">
+      <div class="title">Documentation Agent</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>src/clinical_redteam/agents/documentation.py</code> &middot; <span class="meta-label">Depends on:</span> Phase 1a #15 &middot; <span class="meta-label">Acceptance:</span> FAIL/PARTIAL verdicts produce <code>evals/vulnerabilities/VULN-NNN-DRAFT.md</code> matching ARCH §12.4; high+critical stays DRAFT (no auto-promotion)</div>
+    </div>
+    <div class="effort"><div class="num">1.5h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-aria">
+    <div class="id">A2</div>
+    <div class="body">
+      <div class="title">Orchestrator daemon</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>src/clinical_redteam/agents/orchestrator.py</code> &middot; <span class="meta-label">Depends on:</span> A1 &middot; <span class="meta-label">Acceptance:</span> <code>while not halt:</code> loop, category selection per ARCH §3.6.1, halt on cost cap / signal collapse / coverage floor</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-aria">
+    <div class="id">A3</div>
+    <div class="body">
+      <div class="title">Continuous-mode CLI &mdash; extends <code>run.py</code></div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>src/clinical_redteam/run.py</code> &middot; <span class="meta-label">Depends on:</span> A2 &middot; <span class="meta-label">Acceptance:</span> <code>--continuous --max-budget 5.00 --halt-on-empty-categories</code> runs unattended, halts cleanly, no orphaned processes</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-aria">
+    <div class="id">A4</div>
+    <div class="body">
+      <div class="title">Resume-after-restart logic</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>src/clinical_redteam/persistence.py</code> (extend) &middot; <span class="meta-label">Depends on:</span> A3 &middot; <span class="meta-label">Acceptance:</span> kill -9 mid-run &rarr; restart reads last manifest checkpoint and resumes</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-aria">
+    <div class="id">A5</div>
+    <div class="body">
+      <div class="title">Smoke meta-tests</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>tests/</code> &middot; <span class="meta-label">Depends on:</span> A2 &middot; <span class="meta-label">Acceptance:</span> schema validation, Judge injection meta-test, mutation diversity meta-test, halt-condition unit tests &mdash; all green in CI</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-aria">
+    <div class="id">A6</div>
+    <div class="body">
+      <div class="title">Pre-commit + extend <code>.gitlab-ci.yml</code> &mdash; finally lands Phase 1a #5</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>.pre-commit-config.yaml</code> + <code>.gitlab-ci.yml</code> &middot; <span class="meta-label">Depends on:</span> A5 &middot; <span class="meta-label">Acceptance:</span> pipeline goes green on push; coordinates with Bram (file ownership)</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-aria">
+    <div class="id">A7</div>
+    <div class="body">
+      <div class="title">Single-shot CLI polish</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>src/clinical_redteam/run.py</code> &middot; <span class="meta-label">Depends on:</span> A3 &middot; <span class="meta-label">Acceptance:</span> <code>--help</code> comprehensive, clear error messages, regression-replay mode</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <h3 class="track">Track B &middot; Quality + Eval Content <span class="lead-pill bram">Bram</span></h3>
+
+  <div class="item lead-bram">
+    <div class="id">B2</div>
+    <div class="body">
+      <div class="title">Prompt-injection seed cases (5+)</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/seed/prompt_injection/*.yaml</code> &middot; <span class="meta-label">Acceptance:</span> direct + document-based-indirect, single-turn only per ARCH §9.4, each cites OWASP/ATLAS</div>
+    </div>
+    <div class="effort"><div class="num">1.5h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-bram">
+    <div class="id">B3</div>
+    <div class="body">
+      <div class="title">Unbounded-consumption seed cases (5+)</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/seed/unbounded_consumption/*.yaml</code> &middot; <span class="meta-label">Acceptance:</span> cost-amplification attacks, framework citations</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-bram">
+    <div class="id">B1</div>
+    <div class="body">
+      <div class="title">4 more SID seeds (beyond C-7)</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/seed/sensitive_information_disclosure/*.yaml</code> &middot; <span class="meta-label">Acceptance:</span> 5 total SID seeds (C-7 already present); each cites OWASP LLM02 + MITRE ATLAS technique</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-bram">
+    <div class="id">B4</div>
+    <div class="body">
+      <div class="title">PI Judge criteria YAML</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/criteria/prompt_injection.yaml</code> &middot; <span class="meta-label">Acceptance:</span> pass/fail/partial/uncertain rubric; calibration examples (mirror SID criteria structure)</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-bram">
+    <div class="id">B5</div>
+    <div class="body">
+      <div class="title">UC Judge criteria YAML</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/criteria/unbounded_consumption.yaml</code> &middot; <span class="meta-label">Acceptance:</span> same rubric structure as B4</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-bram">
+    <div class="id">B7</div>
+    <div class="body">
+      <div class="title">VULN-001 polish &mdash; C-7 rediscovery report</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/vulnerabilities/VULN-001-cross-patient-paraphrased-leakage.md</code> &middot; <span class="meta-label">Depends on:</span> Aria A1 + Tate B6 &middot; <span class="meta-label">Acceptance:</span> matches ARCH §12.4 template, cites W2 AUDIT.md C-7</div>
+    </div>
+    <div class="effort"><div class="num">1h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on A1+B6</span></div>
+  </div>
+
+  <h3 class="track">Track C &middot; Tate's Phase 1b items <span class="lead-pill tate">Tate</span></h3>
+
+  <div class="item lead-tate">
+    <div class="id">B6</div>
+    <div class="body">
+      <div class="title">Run continuous-mode daemon ~30 min, confirm C-7 rediscovery</div>
+      <div class="meta"><span class="meta-label">Where:</span> live run &middot; <span class="meta-label">Depends on:</span> Aria A3 &middot; <span class="meta-label">Acceptance:</span> &ge; 1 FAIL or PARTIAL verdict on cross-patient paraphrased leakage</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on A3</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">C1</div>
+    <div class="body">
+      <div class="title">README MVP-state pass</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>README.md</code> &middot; <span class="meta-label">Acceptance:</span> real run command, real env var list, real Langfuse project link</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">C2</div>
+    <div class="body">
+      <div class="title">SETUP.md &mdash; full dev walkthrough</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>SETUP.md</code> &middot; <span class="meta-label">Acceptance:</span> fresh-machine reproducible (venv, env vars, keys, SSH tunnel, first run)</div>
+    </div>
+    <div class="effort"><div class="num">45m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">C3</div>
+    <div class="body">
+      <div class="title">MVP submission</div>
+      <div class="meta"><span class="meta-label">Acceptance:</span> submitted by Tue 11:59 PM per Gauntlet submission instructions</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge ready">Ready</span></div>
+  </div>
+</section>
+
+<!-- ============================================================ PHASE 2 -->
+<section class="pane" id="phase2">
+  <h2 class="phase">Phase 2 — Tate + 1 lead <span class="subtitle">Wed&ndash;Fri morning &middot; vulnerabilities + cost analysis + deploy + dashboard + demo &middot; 0 / 9 shipped</span></h2>
+
+  <div class="item lead-tate">
+    <div class="id">P1</div>
+    <div class="body">
+      <div class="title">systemd service + deploy daemon on DigitalOcean droplet</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>deploy/systemd/clinical-redteam.service</code> &middot; <span class="meta-label">Acceptance:</span> <code>systemctl status clinical-redteam</code> shows active running; journalctl shows progress</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on Phase 1b</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">P2</div>
+    <div class="body">
+      <div class="title">Unattended run &ge; 2 hrs on droplet</div>
+      <div class="meta"><span class="meta-label">Acceptance:</span> &ge; 2 hrs uninterrupted operation; coverage progressed across all 3 categories; halted cleanly on cost cap</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P1</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">P3</div>
+    <div class="body">
+      <div class="title">VULN-002 + VULN-003 (novel findings from continuous-mode)</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>evals/vulnerabilities/VULN-{002,003}-*.md</code> &middot; <span class="meta-label">Acceptance:</span> two more reports beyond VULN-001 matching ARCH §12.4 template</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P2</span></div>
+  </div>
+
+  <div class="item lead-cleo">
+    <div class="id">P5</div>
+    <div class="body">
+      <div class="title">Dashboard generator + dashboard.html</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>scripts/generate_dashboard.py</code> + <code>dashboard.html</code> &middot; <span class="meta-label">Acceptance:</span> single-file HTML with inline Chart.js, no network; coverage / verdict / cost / findings charts</div>
+    </div>
+    <div class="effort"><div class="num">3h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P2</span></div>
+  </div>
+
+  <div class="item lead-cleo">
+    <div class="id">P4</div>
+    <div class="body">
+      <div class="title">Cost analysis at 100 / 1K / 10K / 100K runs (PRD HARD GATE)</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>docs/cost-analysis.md</code> &middot; <span class="meta-label">Acceptance:</span> real per-call costs from MVP runs; projection methodology; architectural changes named per scale tier</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P2</span></div>
+  </div>
+
+  <div class="item lead-cleo">
+    <div class="id">P6</div>
+    <div class="body">
+      <div class="title">Demo video &mdash; script (Cleo) + record (Tate)</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>docs/demo-script.md</code> + YouTube unlisted &middot; <span class="meta-label">Acceptance:</span> 3&ndash;5 min, link added to README header per W2 pattern</div>
+    </div>
+    <div class="effort"><div class="num">2h</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P5</span></div>
+  </div>
+
+  <div class="item lead-cleo">
+    <div class="id">P7</div>
+    <div class="body">
+      <div class="title">README + SETUP final pass</div>
+      <div class="meta"><span class="meta-label">Where:</span> <code>README.md</code> + <code>SETUP.md</code> &middot; <span class="meta-label">Acceptance:</span> deployed URL, demo video, dashboard, badges &mdash; grader-ready landing page</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P6</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">P8</div>
+    <div class="body">
+      <div class="title">Social post (X with platform demo + tag @GauntletAI)</div>
+      <div class="meta"><span class="meta-label">Acceptance:</span> post published; URL captured in submission</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P6</span></div>
+  </div>
+
+  <div class="item lead-tate">
+    <div class="id">P9</div>
+    <div class="body">
+      <div class="title">Final submission</div>
+      <div class="meta"><span class="meta-label">Acceptance:</span> submitted by Fri noon per Gauntlet Demo Day instructions</div>
+    </div>
+    <div class="effort"><div class="num">30m</div></div>
+    <div class="status-cell"><span class="badge blocked">Blocked on P7+P8</span></div>
+  </div>
+</section>
+
+<!-- ============================================================ BY LEAD -->
+<section class="pane" id="byLead">
+
+  <h2 class="phase"><span style="color: var(--tate)">Tate</span> &middot; Director / Coordination</h2>
+  <p style="margin-top:-4px;color:var(--muted);font-size:13px">Persistent across all phases. Owns <code>CLAUDE_SESSION_HANDOFF.md</code>, in-flight coordination, B6 + C1/C2/C3 + Phase 2 vulnerability writing + deploy + submission. Kickoff: <code>.gauntlet/week3/kickoff/tate.md</code>.</p>
+  <p><strong>Phase 1a (14/15 complete).</strong> Phase 1b items: B6, C1, C2, C3. Phase 2 items: P1, P2, P3, P6 (recording), P8, P9.</p>
+
+  <h2 class="phase"><span style="color: var(--aria)">Aria</span> &middot; Implementation Lead</h2>
+  <p style="margin-top:-4px;color:var(--muted);font-size:13px">Active Phase 1b Track A (Mon afternoon &rarr; Tue). Kickoff: <code>.gauntlet/week3/kickoff/aria.md</code> &middot; Handoff (writes own): <code>.gauntlet/week3/handoffs/aria-handoff.md</code>.</p>
+  <p><strong>7 items, ~8.5 hours total:</strong> A1 Documentation Agent (1.5h) &rarr; A2 Orchestrator (2h) &rarr; A3 Continuous CLI (30m) &rarr; A4 Resume logic (1h) &rarr; A5 Meta-tests (2h) &rarr; A6 Pre-commit + CI (1h) &rarr; A7 CLI polish (30m).</p>
+
+  <h2 class="phase"><span style="color: var(--bram)">Bram</span> &middot; Quality + Eval Content Lead</h2>
+  <p style="margin-top:-4px;color:var(--muted);font-size:13px">Active Phase 1b Track B (Mon afternoon &rarr; Tue). Kickoff: <code>.gauntlet/week3/kickoff/bram.md</code> &middot; Handoff: <code>.gauntlet/week3/handoffs/bram-handoff.md</code>.</p>
+  <p><strong>6 items, ~5.5 hours total:</strong> B2 PI seeds (1.5h) &rarr; B3 UC seeds (1h) &rarr; B1 4 more SID seeds (1h) &rarr; B4 PI criteria (30m) &rarr; B5 UC criteria (30m) &rarr; B7 VULN-001 polish (1h, depends on Aria A1 + Tate B6).</p>
+
+  <h2 class="phase"><span style="color: var(--cleo)">Cleo</span> &middot; Delivery + Polish Lead</h2>
+  <p style="margin-top:-4px;color:var(--muted);font-size:13px">Active Phase 2 (Wed &rarr; Fri morning), after MVP shipped. Kickoff: <code>.gauntlet/week3/kickoff/cleo.md</code> &middot; Handoff: <code>.gauntlet/week3/handoffs/cleo-handoff.md</code>.</p>
+  <p><strong>4 items, ~7.5 hours total:</strong> P5 Dashboard (3h) &rarr; P4 Cost analysis (2h) &rarr; P6 Demo script (2h, Tate records) &rarr; P7 README/SETUP final pass (30m). All blocked on Tate P2 (unattended run) producing real data.</p>
+</section>
+
+<!-- ============================================================ OWNERSHIP -->
+<section class="pane" id="ownership">
+  <h2 class="phase">File ownership map <span class="subtitle">From <code>.gauntlet/week3/in-flight.md</code> &middot; enforced by persona instruction &middot; collisions <strong>RAISE</strong>, never silently edit</span></h2>
+
+  <div class="ownership">
+    <div class="lead-card tate">
+      <h4 style="color: var(--tate)">Tate</h4>
+      <div class="role">Director / coordination / submission</div>
+      <ul>
+        <li><code>CLAUDE_SESSION_HANDOFF.md</code> (gitignored, mirrored to OneDrive)</li>
+        <li><code>.gauntlet/week3/in-flight.md</code>, <code>.gauntlet/week3/sessions/**</code></li>
+        <li><code>docs/*.html</code> reference docs (this file)</li>
+        <li>Direct droplet ops (systemd, deploy)</li>
+        <li><strong>Phase 1a:</strong> wrote all <code>src/clinical_redteam/**</code> (handed off to Aria at end of Phase 1a)</li>
+      </ul>
+    </div>
+
+    <div class="lead-card aria">
+      <h4 style="color: var(--aria)">Aria</h4>
+      <div class="role">Agent code / target client / persistence / CLI</div>
+      <ul>
+        <li><code>src/clinical_redteam/__init__.py</code></li>
+        <li><code>src/clinical_redteam/schemas.py</code> <em>(load-bearing; arch sign-off for changes)</em></li>
+        <li><code>src/clinical_redteam/agents/{red_team,judge,documentation,orchestrator}.py</code></li>
+        <li><code>src/clinical_redteam/{target_client,openrouter,persistence,cost_ledger,coverage,content_filter,observability,run}.py</code></li>
+        <li><code>tests/agents/**</code>, <code>tests/test_*.py</code></li>
+        <li><code>pyproject.toml</code>, <code>requirements.txt</code>, <code>.env.example</code></li>
+      </ul>
+    </div>
+
+    <div class="lead-card bram">
+      <h4 style="color: var(--bram)">Bram</h4>
+      <div class="role">Eval seeds / Judge criteria / meta-tests / CI gate</div>
+      <ul>
+        <li><code>evals/seed/sensitive_information_disclosure/*.yaml</code></li>
+        <li><code>evals/seed/prompt_injection/*.yaml</code></li>
+        <li><code>evals/seed/unbounded_consumption/*.yaml</code></li>
+        <li><code>evals/criteria/*.yaml</code></li>
+        <li><code>evals/regression/**</code>, <code>evals/calibration/*.yaml</code></li>
+        <li><code>tests/meta/**</code>, <code>tests/eval/**</code></li>
+        <li><code>.gitlab-ci.yml</code>, <code>.pre-commit-config.yaml</code></li>
+      </ul>
+    </div>
+
+    <div class="lead-card cleo">
+      <h4 style="color: var(--cleo)">Cleo</h4>
+      <div class="role">Dashboard / cost analysis / README / SETUP / demo script (Phase 2)</div>
+      <ul>
+        <li><code>scripts/generate_dashboard.py</code>, <code>dashboard.html</code></li>
+        <li><code>docs/cost-analysis.md</code></li>
+        <li><code>docs/demo-script.md</code></li>
+        <li><code>README.md</code> (Phase 2 final pass; Tate touches in C1)</li>
+        <li><code>SETUP.md</code> (Phase 2 final pass; Tate writes initial in C2)</li>
+        <li>Vulnerability report polish for grader presentation</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="kickoff-block" style="margin-top: 22px;">
+    <h3>Branch policy (FLIPPED at end of Phase 1a)</h3>
+    <p><strong>Phase 1a (now complete):</strong> direct-to-main was allowed for solo Tate work. <em>That allowance has been removed</em> &mdash; permission rules in <code>.claude/settings.local.json</code> have been deleted.</p>
+    <p><strong>Phase 1b onward:</strong> every code commit goes on a <code>crt/&lt;short-desc&gt;</code> feature branch, pushed with auto-MR flags:</p>
+    <pre style="background:var(--code-bg);padding:10px 14px;border-radius:4px;font-size:12px;margin:8px 0;overflow-x:auto"><code>git push -u origin crt/&lt;branch&gt; \
+  -o merge_request.create \
+  -o merge_request.target=main \
+  -o merge_request.remove_source_branch=true</code></pre>
+    <p>User merges the MR on GitLab, then <code>git push github main</code> mirrors to GitHub. Documentation / handoff regeneration remains the direct-to-main exception per Tate kickoff.</p>
+    <p><strong>No worktrees</strong> by default per <code>.gauntlet/week3/in-flight.md</code>. For true wall-clock parallelism between Aria and Bram, EITHER dispatch them as background agents with <code>isolation: "worktree"</code>, OR set up two worktrees manually.</p>
+  </div>
+</section>
+
+</div>
+
+<script>
+  // Tab nav + localStorage persistence
+  const tabs = document.querySelectorAll("nav.tabs button");
+  const panes = document.querySelectorAll(".pane");
+  const KEY = "w3-lead-plan.tab";
+
+  function activate(tab) {
+    tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+    panes.forEach(p => p.classList.toggle("active", p.id === tab));
+    try { localStorage.setItem(KEY, tab); } catch (e) {}
+  }
+
+  tabs.forEach(t => t.addEventListener("click", () => activate(t.dataset.tab)));
+
+  // Restore last tab
+  try {
+    const last = localStorage.getItem(KEY);
+    if (last && document.getElementById(last)) {
+      activate(last);
+    }
+  } catch (e) {}
+</script>
+</body>
+</html>
