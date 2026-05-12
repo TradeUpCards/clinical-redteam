@@ -555,6 +555,13 @@ class OrchestratorDaemon:
         # bounded by mutation depth + cost cap; replay is also idempotent
         # from the human reviewer's perspective).
         self._rehydrate_signal_window_from_disk()
+        # A4 polish (Tate B6 coordination ticket
+        # A4-resume-coverage-reconciliation-tate-to-aria.md): coverage.json
+        # can desync from verdicts/ if the daemon dies between save_verdict
+        # and coverage.record_verdict. Verdicts/ is the source of truth;
+        # rebuild coverage from disk on every construction so resumed
+        # daemons see consistent state.
+        self._reconcile_coverage_from_disk()
 
     # ------------------------------------------------------------------ public
 
@@ -890,8 +897,8 @@ class OrchestratorDaemon:
             tier="documentation",
             model_used=draft.model_used,
             cost_usd=draft.cost_usd,
-            tokens_input=0,
-            tokens_output=0,
+            tokens_input=draft.tokens_input,
+            tokens_output=draft.tokens_output,
             related_id=draft.vuln_id,
         )
         return draft.vuln_id
@@ -945,6 +952,83 @@ class OrchestratorDaemon:
             )
             self._seed_cache[cache_key] = cached
         return int(cached["primary_patient_id"])
+
+    def _reconcile_coverage_from_disk(self) -> None:
+        """Verify (and rebuild if needed) coverage state from on-disk verdicts.
+
+        Failure mode this defends against (Tate B6 coordination):
+        - daemon dies between `save_verdict` and `coverage.record_verdict`
+        - verdict file is on disk but coverage.json's per-category counters
+          are stale
+        - on resume, `select_category` over-attacks the under-counted category
+        - `coverage_floor_met` halt fires later than it should
+
+        Strategy: count verdict files per category by joining each verdict
+        to its attack JSON. If the sum differs from coverage's reported
+        attack_count for any category, replay the missing entries via
+        `record_attack` + `record_verdict`. NEVER decrement — if coverage
+        claims MORE attacks than verdicts/ contains, leave it alone (likely
+        an attack file landed but the run never reached verdict write; the
+        operator can manually clear coverage if needed).
+        """
+        verdicts_dir = self.handle.verdicts_dir
+        if not verdicts_dir.exists():
+            return
+
+        # Build the disk-derived view: per-category list of (verdict, attack)
+        disk_view: dict[str, list[tuple[Any, Any]]] = {}
+        for path in sorted(verdicts_dir.glob("*.json")):
+            try:
+                verdict = self.handle.load_verdict(path.stem)
+            except Exception:  # noqa: BLE001 — tolerate transient .tmp residue
+                continue
+            try:
+                attack = self.handle.load_attack(verdict.attack_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "coverage reconciliation: verdict %s references missing "
+                    "or unreadable attack %s (%s) — skipped",
+                    verdict.verdict_id, verdict.attack_id, exc,
+                )
+                continue
+            disk_view.setdefault(attack.category, []).append((verdict, attack))
+
+        # Compare with current coverage and replay any missing entries.
+        # `coverage.attack_count` is the load-bearing counter; if disk has
+        # more than coverage, we have a desync gap to close.
+        state = self.coverage.to_state(session_cost_usd=0.0)
+        for category, entries in disk_view.items():
+            # Audit R1: guard against unknown categories from disk (e.g.,
+            # a verdict file with a typo or a removed-from-MVP category
+            # name). Without this guard, a single bad verdict could make
+            # the entire run-dir permanently unresumable.
+            if category not in state.categories:
+                logger.warning(
+                    "coverage reconciliation: %d verdict(s) reference "
+                    "unknown category %r — skipped (likely typo, "
+                    "MVP-category mismatch, or fixture corruption)",
+                    len(entries), category,
+                )
+                continue
+            disk_count = len(entries)
+            coverage_count = state.categories[category].attack_count
+            if disk_count <= coverage_count:
+                continue  # already counted, or coverage is ahead (leave alone)
+            gap = disk_count - coverage_count
+            logger.warning(
+                "coverage reconciliation: category %s has %d verdicts on "
+                "disk but coverage shows %d attacks — replaying %d entries",
+                category, disk_count, coverage_count, gap,
+            )
+            # Replay the LAST `gap` entries — they're the most recent and
+            # therefore the most likely to be the missing tail.
+            for verdict, attack in entries[-gap:]:
+                self.coverage.record_attack(category=category)
+                self.coverage.record_verdict(
+                    category=category,
+                    verdict=verdict.verdict,
+                    session_cost_usd=self.ledger.total_usd,
+                )
 
     def _rehydrate_signal_window_from_disk(self) -> None:
         """Populate the rolling signal window from the run-dir's persisted

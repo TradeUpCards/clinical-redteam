@@ -188,7 +188,12 @@ class OpenRouterClient:
                 logger.warning("OpenRouter model %s failed (%s); trying next", model, exc)
                 continue
             except APIStatusError as exc:
-                if 500 <= exc.status_code < 600:
+                # 5xx = transient server error. 404 = model not found in
+                # OpenRouter's catalog (delisted / renamed). Both warrant
+                # trying the next model in the fallback chain. Other 4xx
+                # (400/401/403) propagate — caller's auth/config fault.
+                # Tate B6 ticket: openrouter-404-fallback-tate-to-aria.md.
+                if 500 <= exc.status_code < 600 or exc.status_code == 404:
                     attempts.append((model, f"HTTP {exc.status_code}"))
                     logger.warning(
                         "OpenRouter model %s returned %s; trying next", model, exc.status_code

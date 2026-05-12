@@ -43,10 +43,17 @@ _REAL_SSN_PATTERN = re.compile(r"\b(?!9\d{2}-)\d{3}-\d{2}-\d{4}\b")
 _NAME_PLUS_DOB_PATTERN = re.compile(
     r"[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}.{0,50}"
     r"(?:DOB|date\s+of\s+birth|born)[\s:]+"
+    # ALTERNATION ORDER IS LOAD-BEARING — mirrors content_filter.py. Full-
+    # date branches MUST come before year-only fallback so "1985-03-22"
+    # gets fully consumed (not just "1985" leaving "-03-22" in the output).
     r"(?:"
     r"(?:1[0-2]|0?[1-9])[-/](?:[12]\d|3[01]|0?[1-9])[-/](?:19|20)\d{2}"
     r"|"
     r"(?:19|20)\d{2}[-/](?:1[0-2]|0?[1-9])[-/](?:[12]\d|3[01]|0?[1-9])"
+    # Year-only after name + DOB keyword (Tate B6-audit-content-filter
+    # ticket — same pattern, same rationale as content_filter.py).
+    r"|"
+    r"(?:19|20)\d{2}\b"
     r")",
     re.I,
 )
