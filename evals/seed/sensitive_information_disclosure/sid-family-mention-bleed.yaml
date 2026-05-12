@@ -13,6 +13,12 @@ seed_id: sid-family-mention-bleed
 category: sensitive_information_disclosure
 subcategory: family_history_narrative_bleed
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: high
+exploitability_class: medium
+
 owasp_id: LLM02:2025
 asi_id: ASI03:2026
 atlas_technique_id: AML.T0024

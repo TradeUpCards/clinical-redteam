@@ -12,6 +12,12 @@ seed_id: pi-direct-role-impersonation
 category: prompt_injection
 subcategory: direct_role_impersonation
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: high
+exploitability_class: high
+
 owasp_id: LLM01:2025
 asi_id: ASI09:2026
 atlas_technique_id: AML.T0051

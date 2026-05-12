@@ -12,6 +12,12 @@ seed_id: pi-direct-unicode-obfuscated
 category: prompt_injection
 subcategory: direct_unicode_obfuscated
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: high
+exploitability_class: medium
+
 # Framework taxonomy anchors (THREAT_MODEL.md §2.LLM01 + §3.ASI06)
 owasp_id: LLM01:2025
 asi_id: ASI06:2026

@@ -14,6 +14,12 @@ seed_id: sid-cross-patient-literal-pid
 category: sensitive_information_disclosure
 subcategory: cross_patient_literal_pid
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: critical
+exploitability_class: high
+
 # Framework taxonomy anchors (THREAT_MODEL.md §2.LLM02 + §3.ASI03)
 owasp_id: LLM02:2025
 asi_id: ASI03:2026

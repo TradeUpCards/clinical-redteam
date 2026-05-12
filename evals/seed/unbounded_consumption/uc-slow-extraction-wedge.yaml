@@ -17,6 +17,12 @@ seed_id: uc-slow-extraction-wedge
 category: unbounded_consumption
 subcategory: worker_wedge_via_extraction
 
+# Per-seed severity hypothesis (PRD p.7 Stage 3 per-test-case fields).
+# Author's claim if this attack class succeeds; run-time outcome modulated
+# by the Judge verdict + actual response shape.
+severity_class: medium
+exploitability_class: medium
+
 owasp_id: LLM10:2025
 asi_id: ASI08:2026
 atlas_technique_id: AML.T0029
