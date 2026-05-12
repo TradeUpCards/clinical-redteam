@@ -182,7 +182,7 @@ class RunHandle:
         write whatever status was supplied and never promote on save.
         """
         path = self.vulnerabilities_dir / f"{frontmatter.vuln_id}.md"
-        rendered = _render_vuln_report(frontmatter, body_markdown)
+        rendered = render_vuln_report(frontmatter, body_markdown)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(path, rendered)
         self._touch_manifest_index("vuln_ids", frontmatter.vuln_id)
@@ -309,7 +309,7 @@ def resume_run(run_id: str, *, results_dir: Path) -> RunHandle:
 # ---------------------------------------------------------------------------
 
 
-def _render_vuln_report(
+def render_vuln_report(
     frontmatter: VulnerabilityReportFrontmatter, body_markdown: str
 ) -> str:
     """Render YAML frontmatter + body in the layout ARCH §12.4 prescribes.
@@ -317,6 +317,10 @@ def _render_vuln_report(
     Uses PyYAML via json round-trip avoidance — we hand-roll the YAML here
     rather than depending on yaml.dump's quoting decisions, so the rendered
     file matches the ARCH §12.4 example byte-for-byte where it can.
+
+    Public so the Documentation Agent (agents/documentation.py) can use it
+    when writing canonical drafts to repo-root `evals/vulnerabilities/`
+    without going through a per-run RunHandle.
     """
     fm = frontmatter.model_dump(mode="json")
     lines: list[str] = ["---"]
@@ -396,6 +400,7 @@ __all__ = [
     "atomic_write_bytes",
     "atomic_write_json",
     "atomic_write_text",
+    "render_vuln_report",
     "resume_run",
     "start_run",
 ]
