@@ -1,10 +1,35 @@
 # GitLab CI gate for the Clinical Red Team Platform.
+#
+# === IMPORTANT: NO RUNNER PROVISIONED ON labs.gauntletai.com ===
+# This file is in the repo as a documented-but-not-executing CI gate.
+# The labs.gauntletai.com instance does not provide instance-shared
+# Runners for student projects, and registering a self-hosted Runner
+# was out of scope for the W3 build. The jobs below are therefore
+# `when: manual` — the pipeline shows up on each MR / main push as
+# clickable "Play" buttons rather than auto-running and getting stuck
+# on "no available runner" (MR #14's first pipeline timed out after
+# ~1.9 hours queued — `failure_reason=stuck_or_timeout_failure`).
+#
+# **The same logic runs automatically on every push via the GitHub
+# mirror's Actions workflow:**
+#   https://github.com/TradeUpCards/clinical-redteam/actions
+#
+# `.github/workflows/ci.yml` is the executing CI gate; this
+# `.gitlab-ci.yml` is its GitLab-format twin, present so the fork has
+# a CI pipeline visible on its primary review surface. If a reviewer
+# on GitLab wants to trigger an actual run, they need (a) Project
+# Settings > CI/CD > Runners to have at least one runner registered,
+# then (b) click the "Play" button on the stage they want to run.
+#
+# Same pattern AgentForge used in week 1 (see that repo's
+# .gitlab-ci.yml + .github/workflows/agent-eval.yml).
+#
+# === END RUNNER NOTE ===
+#
 # Mirrors the gates pre-commit enforces locally (.pre-commit-config.yaml)
 # so any commit that's green on a dev machine is green in CI.
 #
 # Project: labs.gauntletai.com/coryvandenberg/clinical-redteam
-# Pipeline must be green before MR auto-merge fires.
-#
 # Authorship: scaffolded per Aria's A6 coordination note
 # (.gauntlet/week3/coordination/A6-ci-test-commands-aria-to-bram.md);
 # Bram owns this file per the W3 file-ownership map.
@@ -40,13 +65,21 @@ before_script:
 
 lint:
   stage: lint
+  # `when: manual` — click-to-run on the MR pipeline page. See header
+  # comment block; no runner is provisioned on labs.gauntletai.com.
+  # The same lint check runs automatically on GitHub Actions.
+  when: manual
   script:
     - pre-commit run --all-files
 
 test:
   stage: test
+  when: manual
   script:
-    - python -m pytest tests/ --tb=short -v --junitxml=junit.xml
+    # `-m "not live_target"` matches .pre-commit-config.yaml + .github/workflows/ci.yml
+    # so all three gates run identical test sets. No tests carry the marker today;
+    # the filter future-proofs for Phase 2 live-target tiering.
+    - python -m pytest tests/ -m "not live_target" --tb=short -v --junitxml=junit.xml
   artifacts:
     when: always
     reports:
