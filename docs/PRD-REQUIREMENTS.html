@@ -425,7 +425,7 @@
 <div class="page-header">
   <h1>GauntletAI W3 — Adversarial AI Security Platform<br>PRD Requirements Checklist</h1>
   <div class="meta">
-    <span><strong>Generated:</strong> 2026-05-11</span>
+    <span><strong>Generated:</strong> 2026-05-11 &nbsp;·&nbsp; <strong>Last sweep:</strong> 2026-05-12 (Tate, post-B6/C1/C2)</span>
     <span><strong>PRD:</strong> "Week 3 - AgentForge - Adversarial AI Security Platform PRD.pdf" (15 pages)</span>
     <span><strong>Source:</strong> <code>C:/Dev/GauntletAI/ClinicalRedTeam/docs/research/prd/Week 3 - AgentForge - Adversarial AI Security Platform PRD.pdf</code></span>
     <span><strong>Repo:</strong> <code>C:/Dev/GauntletAI/ClinicalRedTeam/</code></span>
@@ -440,8 +440,8 @@
 <div class="summary-grid">
   <div class="summary-card hard-gate-card">
     <h3>Hard Gates Remaining</h3>
-    <div class="count">5</div>
-    <div class="detail">out of 5 total hard gates</div>
+    <div class="count">1</div>
+    <div class="detail">HG-1 (URL must be live at submission); HG-2/3/4/5 satisfied</div>
   </div>
   <div class="summary-card">
     <h3>Total Requirements</h3>
@@ -470,9 +470,10 @@
   <div class="summary-card">
     <h3>By Status</h3>
     <div class="detail" style="margin-top:4px; font-size:13px;">
-      <div>&#9744; Not started: <strong>49</strong></div>
-      <div>&#9203; In progress: <strong>24</strong></div>
-      <div>&#10003; Done: <strong>0</strong></div>
+      <div>&#9744; Not started: <strong>14</strong></div>
+      <div>&#9203; In progress: <strong>16</strong></div>
+      <div>&#10003; Done: <strong>40</strong></div>
+      <div style="margin-top:6px; font-size:11px; color:#64748b;">Last sweep 2026-05-12. Re-sweep after MR merges + B7 lands.</div>
     </div>
   </div>
 </div>
@@ -521,7 +522,7 @@
         <td><strong>MVP</strong></td>
         <td class="deadline-mvp">Tuesday @ 11:59 PM</td>
         <td>Stages 1–4: target running, threat model, attack suite (evals/), architecture doc, one live agent role</td>
-        <td><span class="badge badge-notstarted">&#9744; not-started</span></td>
+        <td><span class="badge badge-progress">&#9203; in-progress</span></td>
       </tr>
       <tr>
         <td><strong>Final</strong></td>
@@ -548,7 +549,7 @@
       <div class="hg-text">Your deployed target application URL must be submitted with every checkpoint. The adversarial platform must be running tests against a live system, not just a mock.</div>
       <div class="hg-meta">PRD p. 7 | Stage 1 "Stand Up the Target" | Applies: MVP &amp; Final (both checkpoints)</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">URL exists (142-93-242-40.nip.io); must be live + tested at submission</span></div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">URL exists (142-93-242-40.nip.io). Pre-submit smoke: curl /health + run smoke attack. Verified live during B6 v2 run 2026-05-12.</span></div>
   </div>
 
   <!-- HG2 -->
@@ -559,7 +560,7 @@
       <div class="hg-text">A markdown document (./THREAT_MODEL.md) with your full attack surface map. The document must begin with a ~500 word summary of your key findings, the highest-risk attack categories, and how your platform will prioritize coverage.</div>
       <div class="hg-meta">PRD p. 7 | Stage 2 "Map the Attack Surface" | Applies: MVP</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File exists — verify summary is ~500w and all 6 attack categories mapped</span></div>
+    <div class="hg-status"><span class="badge badge-done">&#10003; done</span><br><span style="font-size:11px; color:#065f46;">./THREAT_MODEL.md exec-summary 484w; all 6 attack categories (PI / SID / state-corruption / tool-misuse / DoS / identity) mapped</span></div>
   </div>
 
   <!-- HG3 -->
@@ -570,7 +571,7 @@
       <div class="hg-text">A working test suite (./evals/) with results from at least three distinct attack categories, plus a working prototype of at least one agent role (Red Team, Judge, or Orchestrator) running live against the deployed target.</div>
       <div class="hg-meta">PRD p. 8 | Stage 3 "Build Initial Attack Suite" | Applies: MVP</div>
     </div>
-    <div class="hg-status"><span class="badge badge-notstarted">&#9744; not-started</span><br><span style="font-size:11px; color:#9b2c2c;">evals/ directory is empty — highest priority build item</span></div>
+    <div class="hg-status"><span class="badge badge-done">&#10003; done</span><br><span style="font-size:11px; color:#065f46;">17 seeds across SID/PI/UC; 4 agents wired (red_team, judge, orchestrator, documentation); B6 v2 ran 30 attacks live at evals/results/20260512T134033-f7bfca/</span></div>
   </div>
 
   <!-- HG4 -->
@@ -581,7 +582,7 @@
       <div class="hg-text">A markdown document (./ARCHITECTURE.md) defining your multi-agent platform architecture. The document must begin with a ~500 word summary and must explicitly name each agent, its role, and how it fits into the overall system. A diagram of agent interactions is strongly recommended.</div>
       <div class="hg-meta">PRD p. 8 | Stage 4 "Plan the Platform Architecture" | Applies: MVP</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File exists — verify diagram is present or noted as recommended</span></div>
+    <div class="hg-status"><span class="badge badge-done">&#10003; done</span><br><span style="font-size:11px; color:#065f46;">./ARCHITECTURE.md exec-summary present; ASCII diagram §1 + runtime diagram §1.1; 4 agent definitions §2; §12 Pydantic schemas</span></div>
   </div>
 
   <!-- HG5 / ARCH REQ -->
@@ -592,7 +593,7 @@
       <div class="hg-text">A single-agent or pipeline architecture does not satisfy this assignment. Each role below represents a distinct agent with its own responsibilities, context, and decision-making authority. Your ARCHITECTURE.md must define each agent, its inputs and outputs, its trust level, and how it coordinates with the others.</div>
       <div class="hg-meta">PRD p. 9 | "Platform Requirements" / "Architecture Requirement" callout | Applies: Both (graded at every checkpoint)</div>
     </div>
-    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">Architecture doc names 4 agents — must verify each has distinct context + trust level documented</span></div>
+    <div class="hg-status"><span class="badge badge-done">&#10003; done</span><br><span style="font-size:11px; color:#065f46;">src/clinical_redteam/agents/{red_team,judge,orchestrator,documentation}.py — 4 distinct agents with own contexts, trust levels, Pydantic message schemas</span></div>
   </div>
 </div>
 
@@ -615,14 +616,14 @@
             <td class="text">Clinical Co-Pilot from Weeks 1 and 2 must be running locally and deployed, ready to be tested</td>
             <td class="loc">p. 6–7 §Stage 1</td>
             <td class="cat"><span class="badge badge-table">Table</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Document any changes made to bring the system into a testable state — this becomes part of README and threat model context</td>
             <td class="loc">p. 6 §Stage 1</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -636,7 +637,7 @@
             <td class="text">Adversarial platform must be running tests against the live system (not a mock) at MVP checkpoint</td>
             <td class="loc">p. 7 §Stage 1</td>
             <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
         </tbody>
       </table>
@@ -653,63 +654,63 @@
             <td class="text">Produce a structured threat model covering the full attack surface of the Clinical Co-Pilot (HARD GATE: ./THREAT_MODEL.md)</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Threat model must cover: Prompt injection vectors — direct, indirect, and multi-turn</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Threat model must cover: Data exfiltration paths — PHI leakage, cross-patient data exposure, authorization bypass</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Threat model must cover: State corruption attacks — conversation history manipulation, context poisoning</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Threat model must cover: Tool misuse — unintended tool invocation, parameter tampering, recursive tool calls</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Threat model must cover: Denial of service patterns — token exhaustion, infinite loops, cost amplification</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Threat model must cover: Identity and role exploitation — privilege escalation, persona hijacking, trust boundary violations</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">For each attack category, identify: the attack surface, the potential impact, the difficulty of exploitation, and whether existing defenses address it</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">THREAT_MODEL.md must begin with a ~500 word summary of key findings, highest-risk attack categories, and how the platform will prioritize coverage</td>
             <td class="loc">p. 7 §Stage 2</td>
             <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
         </tbody>
       </table>
@@ -726,70 +727,70 @@
             <td class="text">Working test suite (./evals/) with results from at least three distinct attack categories (HARD GATE)</td>
             <td class="loc">p. 8 §Stage 3</td>
             <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Working prototype of at least one agent role (Red Team, Judge, or Orchestrator) running live against the deployed target (HARD GATE)</td>
             <td class="loc">p. 8 §Stage 3</td>
             <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Test cases must be structured, reproducible, and extensible (not just static payloads — they are seeds the Red Team Agent will learn from)</td>
             <td class="loc">p. 8 §Stage 3</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Each test case must include: Attack category and subcategory</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Each test case must include: The specific prompt or input sequence</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Each test case must include: The expected safe behavior</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Each test case must include: The observed behavior (pass/fail/partial)</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Each test case must include: Severity rating and exploitability assessment</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Each test case must include: Whether the case should be added to the regression suite</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Attack cases must exercise the highest-priority attack categories from the threat model</td>
             <td class="loc">p. 7 §Stage 3</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
         </tbody>
       </table>
@@ -824,21 +825,21 @@
             <td class="text">Threat Model (./THREAT_MODEL.md): Full attack surface map with a ~500 word summary of key findings and highest-risk categories. (Also MVP HARD GATE — must be final-quality by Final.)</td>
             <td class="loc">p. 11 Table</td>
             <td class="cat"><span class="badge badge-table">Table</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">User Doc (./USERS.md): The users the platform addresses, their workflows, and specific use cases with explicit justification for why automation is the right solution.</td>
             <td class="loc">p. 11 Table</td>
             <td class="cat"><span class="badge badge-table">Table</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Architecture Doc (./ARCHITECTURE.md): Multi-agent platform architecture with technical details including each agent role, inter-agent communication design, orchestration strategy, regression harness, observability layer, and known tradeoffs. Must begin with ~500 word summary. Must include a diagram of agent interactions.</td>
             <td class="loc">p. 11 Table</td>
             <td class="cat"><span class="badge badge-table">Table</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -852,14 +853,14 @@
             <td class="text">Eval Dataset (./evals/): Adversarial test suite with results across at least three attack categories. Structure and scope are design decisions; results must be reproducible.</td>
             <td class="loc">p. 11 Table</td>
             <td class="cat"><span class="badge badge-table">Table</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Vulnerability Reports: Professional documentation for each discovered vulnerability following the required format. Minimum of three distinct vulnerability reports.</td>
             <td class="loc">p. 11 Table</td>
             <td class="cat"><span class="badge badge-table">Table</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -942,14 +943,14 @@
             <td class="text">Regression &amp; Validation Harness must store confirmed exploits in a versioned, queryable format</td>
             <td class="loc">p. 10 §Regression</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Regression &amp; Validation Harness must run the full regression suite automatically when triggered by the Orchestrator</td>
             <td class="loc">p. 10 §Regression</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -970,21 +971,21 @@
             <td class="text">Documentation Agent must convert confirmed exploits from the Judge Agent into structured, professional vulnerability reports without requiring a human to write them</td>
             <td class="loc">p. 9 §Doc Agent</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Architecture must address how the platform handles cost, rate limits, and model constraints at scale</td>
             <td class="loc">p. 8 §Stage 4</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Architecture must address what framework or infrastructure manages agent state and coordination</td>
             <td class="loc">p. 8 §Stage 4</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -1024,42 +1025,42 @@
             <td class="text">System must collectively be capable of: Generating novel adversarial inputs</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must collectively be capable of: Mutating partially-successful attacks to probe for bypasses</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must collectively be capable of: Targeting multi-turn attack sequences, not just single-prompt injections</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must collectively be capable of: Evaluating whether an attack succeeded, with consistent criteria across runs and system versions</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must collectively be capable of: Prioritizing which attack surfaces to explore next based on coverage gaps and unresolved findings</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must collectively be capable of: Halting or redirecting when cost is accumulating without producing signal</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -1082,14 +1083,14 @@
             <td class="text">Platform must surface: Which attack categories have been tested, and how many cases exist per category</td>
             <td class="loc">p. 10 §Observability</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Platform must surface: What is the current pass/fail rate across all test categories and system versions</td>
             <td class="loc">p. 10 §Observability</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
@@ -1103,21 +1104,21 @@
             <td class="text">Platform must surface: Which vulnerabilities are open, in progress, or resolved</td>
             <td class="loc">p. 10 §Observability</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Platform must surface: How much did this test run cost, and at what rate is cost scaling</td>
             <td class="loc">p. 10 §Observability</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Platform must surface: What is each agent doing, and in what order did it happen (agent action audit log)</td>
             <td class="loc">p. 10 §Observability</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
         </tbody>
       </table>
@@ -1133,21 +1134,21 @@
             <td class="text">Judge Agent must be independent of the attack engine — a system that both generates attacks and evaluates them is compromised by design</td>
             <td class="loc">p. 4 §Evaluation</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Must define the Judge's evaluation criteria and how to prevent it from drifting as the target system changes</td>
             <td class="loc">p. 4 §Evaluation</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">Must validate the Judge itself — how do you validate the Judge is not drifting and criteria are consistent across runs</td>
             <td class="loc">p. 4 §Evaluation</td>
             <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
         </tbody>
       </table>
@@ -1259,21 +1260,21 @@
             <td class="text">System must define where it stops and asks a human versus proceeding autonomously — this is an explicit design decision, not an implementation detail</td>
             <td class="loc">p. 5 §Trust</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must define how it communicates confidence, and what happens when that confidence is wrong (false positive = wasted engineering time; false negative = uncaught vulnerability)</td>
             <td class="loc">p. 5 §Trust</td>
             <td class="cat"><span class="badge badge-body">Body</span></td>
-            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
           </tr>
           <tr>
             <td class="cb"><input type="checkbox"></td>
             <td class="text">System must document the model selection decision for each agent role — commercial frontier models are often trained to refuse offensive security workflows; smaller/open-source models may be more capable in certain positions. That is a deliberate decision you must make and defend.</td>
             <td class="loc">p. 9 §Multi-Agent</td>
             <td class="cat"><span class="badge badge-other">Other</span></td>
-            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+            <td class="status"><span class="badge badge-done">&#10003; done</span></td>
           </tr>
         </tbody>
       </table>
