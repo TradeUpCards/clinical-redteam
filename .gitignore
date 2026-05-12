@@ -5,6 +5,9 @@
 !.env.example
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
 .venv/
 venv/
 .pytest_cache/

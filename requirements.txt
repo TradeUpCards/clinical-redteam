@@ -1,0 +1,25 @@
+# Clinical Red Team Platform — runtime dependencies
+# Python 3.11+ required. Pinned to floors known to work; CI verifies.
+# Architectural anchors: ARCHITECTURE.md §6 (frameworks), §8.2 (model strategy), §9.1 (LangGraph).
+
+# Multi-agent graph (ARCH §9.1 — chosen over CrewAI/AutoGen/custom for continuity with W2 Clinical Co-Pilot)
+langgraph>=0.2.0
+
+# Inter-agent contracts (ARCH §12) + config validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# LLM routing — OpenRouter is OpenAI-compatible, so the openai SDK is the client (ARCH §8.2.6)
+openai>=1.40.0
+
+# HTTP client for HMAC-signed target calls (ARCH §2.1 — every target call signed)
+httpx>=0.27.0
+
+# Eval seed cases + Judge criteria YAMLs
+PyYAML>=6.0
+
+# Environment loading
+python-dotenv>=1.0.0
+
+# Observability — per-agent spans, PHI scrubber (ARCH §9.1, presearch.html §10)
+langfuse>=2.40.0
