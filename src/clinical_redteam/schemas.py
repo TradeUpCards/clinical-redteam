@@ -137,9 +137,16 @@ class JudgeVerdict(BaseModel):
 
 
 class VerdictCounts(BaseModel):
-    """Per-category verdict tally. All four states keyed even when zero."""
+    """Per-category verdict tally. All four states keyed even when zero.
 
-    model_config = ConfigDict(extra="forbid")
+    `pass` is a Python keyword so the model field is `pass_`. `populate_by_name`
+    means both the alias (`pass` — what ARCH §12.3 example uses on the wire)
+    AND the field name (`pass_` — what model_dump emits by default) are accepted
+    on validation. Round-tripping through `.model_dump()` → `.model_validate()`
+    works without callers having to remember `by_alias=True`.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     pass_: int = Field(default=0, ge=0, alias="pass")
     fail: int = Field(default=0, ge=0)
