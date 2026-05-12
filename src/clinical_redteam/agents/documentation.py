@@ -229,6 +229,8 @@ class DraftSections:
     remediation: str
     model_used: str
     cost_usd: float
+    tokens_input: int = 0
+    tokens_output: int = 0
 
 
 def _excerpt_response(text: str, *, severity: Severity, max_chars: int = 1200) -> str:
@@ -421,6 +423,8 @@ class DocumentationAgent:
             frontmatter=frontmatter,
             cost_usd=sections.cost_usd,
             model_used=sections.model_used,
+            tokens_input=sections.tokens_input,
+            tokens_output=sections.tokens_output,
         )
 
     # ------------------------------------------------------------------ internals
@@ -511,6 +515,8 @@ class DocumentationAgent:
             remediation=parsed["remediation"].strip(),
             model_used=result.model_used,
             cost_usd=result.cost_usd,
+            tokens_input=result.tokens_input,
+            tokens_output=result.tokens_output,
         )
 
 
@@ -525,6 +531,9 @@ class DraftResult:
 
     The Orchestrator records `cost_usd` against the documentation tier of the
     cost ledger and emits a Langfuse span with `model_used` in the trace.
+    `tokens_input` / `tokens_output` are exposed for per-call quota
+    monitoring and per-token cost analysis (Phase 2 cost-analysis.md).
+    Default to 0 when the deterministic-template fallback ran (no LLM call).
     """
 
     vuln_id: str
@@ -534,6 +543,8 @@ class DraftResult:
     frontmatter: VulnerabilityReportFrontmatter
     cost_usd: float
     model_used: str
+    tokens_input: int = 0
+    tokens_output: int = 0
 
 
 # ---------------------------------------------------------------------------

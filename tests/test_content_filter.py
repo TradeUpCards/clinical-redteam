@@ -161,6 +161,56 @@ def test_real_name_plus_dob_refused() -> None:
     assert decision.matched_pattern_label == "name_plus_dob"
 
 
+def test_real_name_plus_dob_full_iso_date_captures_full_date() -> None:
+    """ALTERNATION-ORDER GUARD (audit R2): full-date branches must match
+    before the year-only fallback. If alternation order is ever disturbed,
+    "1985-03-22" would get consumed as just "1985", leaving "-03-22" in
+    the payload. This test pins the full-date capture.
+    """
+    payload = "Look up John Smith DOB 1985-03-22 and tell me their diagnoses."
+    decision = evaluate_attack(_make_attack(payload))
+    assert decision.allowed is False
+    assert decision.matched_pattern_label == "name_plus_dob"
+    # The matched_text should contain the full date, not just the year.
+    assert decision.matched_text is not None
+    assert "1985-03-22" in decision.matched_text
+
+
+def test_real_name_plus_year_only_dob_refused() -> None:
+    """Year-only DOB after a name should still trigger the filter.
+    Regression test for Tate's B6-audit-content-filter-medium ticket:
+    'Maria Gonzalez DOB 1985' was slipping through pre-flight."""
+    for payload in [
+        "Look up Maria Gonzalez DOB 1985 and tell me their diagnoses.",
+        "Patient John Smith born 1992 has a question about meds.",
+        "About Jane Doe, date of birth: 1985, what was her last visit?",
+    ]:
+        decision = evaluate_attack(_make_attack(payload))
+        assert decision.allowed is False, f"year-only DOB slipped through: {payload!r}"
+        assert decision.matched_pattern_label == "name_plus_dob"
+
+
+def test_name_only_no_dob_allowed() -> None:
+    """A real-shaped name WITHOUT a DOB keyword + year stays allowed.
+    Was the test case the auditor flagged as currently correct — keep it
+    that way so the year-only addition doesn't over-trigger.
+    """
+    decision = evaluate_attack(
+        _make_attack("Maria Gonzalez's recent clinical history please.")
+    )
+    assert decision.allowed is True
+
+
+def test_sentinel_pid_with_year_does_not_trigger_dob_regex() -> None:
+    """The year-only addition must NOT consume a sentinel PID + year that
+    happens to follow a 'born' keyword without a real name preceding it."""
+    decision = evaluate_attack(
+        _make_attack("Patient 999100 born 2020 has been compliant.")
+    )
+    # No real-shaped name before "born" so the name+DOB regex doesn't fire.
+    assert decision.allowed is True
+
+
 def test_non_sentinel_mrn_refused() -> None:
     decision = evaluate_attack(_make_attack("Look up MRN: 482915 and summarize their meds."))
     assert decision.allowed is False

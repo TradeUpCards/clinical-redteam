@@ -214,6 +214,49 @@ def test_non_pass_verdict_with_empty_criteria_escalates() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Empty-response guard (B6 LOW #3 — Tate coordination)
+# ---------------------------------------------------------------------------
+
+
+def test_empty_target_response_short_circuits_to_uncertain() -> None:
+    """An empty HTTP 200 body is ambiguous (silent failure vs correct
+    refusal). The Judge must not pay for an LLM call on it AND must not
+    return high-confidence PASS — escalate to uncertain without invoking
+    OpenRouter.
+    """
+    stub = MagicMock(spec=OpenRouterClient)
+    # If the stub's complete() is called, this fails the test — the
+    # guard should short-circuit before any LLM call.
+    stub.complete.side_effect = AssertionError("LLM should not be called on empty response")
+    judge = JudgeAgent(client=stub)
+    verdict = judge.evaluate(
+        attack=_attack(),
+        target_response_text="",
+        evals_dir=REPO_EVALS,
+    )
+    assert verdict.verdict == "uncertain"
+    assert verdict.confidence == 0.0
+    assert verdict.human_escalation_required is True
+    assert verdict.cost_usd == 0.0
+    assert verdict.judge_model == "empty-response-guard"
+
+
+def test_whitespace_only_response_also_short_circuits() -> None:
+    """An all-whitespace response is functionally the same as empty —
+    no decision information to evaluate."""
+    stub = MagicMock(spec=OpenRouterClient)
+    stub.complete.side_effect = AssertionError("LLM should not be called")
+    judge = JudgeAgent(client=stub)
+    verdict = judge.evaluate(
+        attack=_attack(),
+        target_response_text="   \n\t  \n",
+        evals_dir=REPO_EVALS,
+    )
+    assert verdict.verdict == "uncertain"
+    assert verdict.human_escalation_required is True
+
+
+# ---------------------------------------------------------------------------
 # Output robustness
 # ---------------------------------------------------------------------------
 

@@ -957,6 +957,56 @@ def test_resumed_daemon_rehydrates_signal_window_from_disk(tmp_path: Path) -> No
     )
 
 
+def test_coverage_reconciled_from_disk_when_daemon_resumes(tmp_path: Path) -> None:
+    """A4 polish (Tate B6 coordination ticket): if the daemon dies between
+    save_verdict and coverage.record_verdict, coverage.json is stale.
+    On resume, __post_init__ must reconcile coverage from on-disk verdicts.
+
+    Setup: run daemon1 for 2 iterations (writes coverage cleanly to 2).
+    Then SIMULATE the desync: directly write a 3rd attack + verdict pair
+    to disk WITHOUT going through coverage.record_*.
+    Build daemon2 (resume). __post_init__ should detect the gap and
+    bump coverage from 2 → 3.
+    """
+    daemon1 = _build_daemon(tmp_path)
+    daemon1.run_until_halt(max_iterations=2)
+    assert daemon1.coverage.to_state(
+        session_cost_usd=0.0
+    ).categories["sensitive_information_disclosure"].attack_count == 2
+
+    # Simulate the desync: write attack #3 + verdict #3 to disk WITHOUT
+    # calling coverage.record_*. This mimics the failure mode where the
+    # daemon was killed between save_verdict and the coverage update.
+    third_attack = _make_attack(3)
+    daemon1.handle.save_attack(third_attack)
+    third_verdict = _make_verdict(3, third_attack.attack_id, state="pass")
+    daemon1.handle.save_verdict(third_verdict)
+
+    # Build daemon2 (resume). __post_init__ should reconcile.
+    handle = resume_run(run_id="testrun-001", results_dir=tmp_path / "results")
+    ledger = CostLedger.load(run_dir=handle.run_dir)
+    coverage = CoverageTracker.load(run_dir=handle.run_dir)
+    obs = Observability.from_env(session_id="testrun-001", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon2 = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=_FakeTarget(),
+        coverage=coverage, ledger=ledger, handle=handle, obs=obs,
+        config=config, session_id="testrun-001",
+    )
+    # Coverage reconciled — now reports 3 attacks (was 2 stale)
+    assert daemon2.coverage.to_state(
+        session_cost_usd=0.0
+    ).categories["sensitive_information_disclosure"].attack_count == 3
+
+
 def test_resumed_daemon_continues_attack_id_sequence(tmp_path: Path) -> None:
     """`_next_sequence` reads manifest['attack_ids'] — so a resumed daemon's
     next attack gets the correct sequence number across restart."""

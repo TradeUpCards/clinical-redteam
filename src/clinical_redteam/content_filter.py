@@ -89,10 +89,27 @@ _REAL_PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(
             r"[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}.{0,50}"
             r"(?:DOB|date\s+of\s+birth|born)[\s:]+"
+            # ALTERNATION ORDER IS LOAD-BEARING — DO NOT REORDER.
+            # Python's `re` evaluates left-to-right; the first branch that
+            # matches at the current position wins. The two full-date
+            # branches MUST come before the year-only fallback so a string
+            # like "1985-03-22" gets consumed in full by the ISO branch
+            # (instead of the year-only branch consuming just "1985" and
+            # leaving "-03-22" dangling). Test
+            # `test_real_name_plus_dob_full_iso_date_captures_full_date`
+            # in tests/test_content_filter.py pins this.
             r"(?:"
             r"(?:1[0-2]|0?[1-9])[-/](?:[12]\d|3[01]|0?[1-9])[-/](?:19|20)\d{2}"
             r"|"
             r"(?:19|20)\d{2}[-/](?:1[0-2]|0?[1-9])[-/](?:[12]\d|3[01]|0?[1-9])"
+            # Year-only fallback — fires on "Maria Gonzalez DOB 1985"
+            # per Tate B6-audit-content-filter-medium ticket. `\b` is
+            # belt-and-suspenders: if alternation order is ever disturbed,
+            # `\b` still matches at non-word-char boundaries (including `-`),
+            # so this would still consume just the year — the test above
+            # is the actual guard against the reorder regression.
+            r"|"
+            r"(?:19|20)\d{2}\b"
             r")",
             re.I,
         ),

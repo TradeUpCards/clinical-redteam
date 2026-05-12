@@ -209,6 +209,33 @@ def test_complete_all_models_fail_raises() -> None:
     assert [m for m, _ in info.value.attempts] == ["primary", "secondary", "tertiary"]
 
 
+def test_complete_falls_back_on_404() -> None:
+    """A 404 from OpenRouter means the named model has been delisted /
+    renamed in the catalog. The fallback chain should be tried before
+    propagating — otherwise a stale model ID in .env wedges the daemon.
+
+    Regression test for Tate's openrouter-404-fallback-tate-to-aria.md
+    coordination ticket (LOW; surfaced during B6 run-1).
+    """
+    env = {
+        "OPENROUTER_API_KEY": "k",
+        "RED_TEAM_MODEL": "delisted-primary",
+        "RED_TEAM_FALLBACK_MODELS": "live-secondary",
+    }
+    calls: list[str] = []
+
+    def stub(**kwargs):
+        calls.append(kwargs["model"])
+        if kwargs["model"] == "delisted-primary":
+            raise _server_error("delisted-primary", status=404)
+        return _fake_response("via fallback", model=kwargs["model"])
+
+    client = _client_with_stub(stub, env=env)
+    result = client.complete([{"role": "user", "content": "x"}], tier="red_team")
+    assert calls == ["delisted-primary", "live-secondary"]
+    assert result.model_used == "live-secondary"
+
+
 def test_complete_4xx_other_than_429_does_not_fallback() -> None:
     """A 400/401/403 means the request itself is bad — fallback won't help.
 
@@ -226,6 +253,49 @@ def test_complete_4xx_other_than_429_does_not_fallback() -> None:
     client = _client_with_stub(stub, env=env)
     with pytest.raises(APIStatusError):
         client.complete([{"role": "user", "content": "x"}], tier="red_team")
+
+
+def test_complete_401_does_not_fallback() -> None:
+    """401 = bad API key. Fallback won't help — every model uses the same
+    key. Regression guard added per audit R3 (quality-pass-1).
+    """
+    env = {
+        "OPENROUTER_API_KEY": "k",
+        "RED_TEAM_MODEL": "primary",
+        "RED_TEAM_FALLBACK_MODELS": "secondary",
+    }
+    calls: list[str] = []
+
+    def stub(**kwargs):
+        calls.append(kwargs["model"])
+        raise _server_error(kwargs["model"], status=401)
+
+    client = _client_with_stub(stub, env=env)
+    with pytest.raises(APIStatusError):
+        client.complete([{"role": "user", "content": "x"}], tier="red_team")
+    # Primary attempted exactly once; no fallback retry
+    assert calls == ["primary"]
+
+
+def test_complete_403_does_not_fallback() -> None:
+    """403 = forbidden (account suspended, model unavailable to this key).
+    Same reasoning as 401. Regression guard per audit R3.
+    """
+    env = {
+        "OPENROUTER_API_KEY": "k",
+        "RED_TEAM_MODEL": "primary",
+        "RED_TEAM_FALLBACK_MODELS": "secondary",
+    }
+    calls: list[str] = []
+
+    def stub(**kwargs):
+        calls.append(kwargs["model"])
+        raise _server_error(kwargs["model"], status=403)
+
+    client = _client_with_stub(stub, env=env)
+    with pytest.raises(APIStatusError):
+        client.complete([{"role": "user", "content": "x"}], tier="red_team")
+    assert calls == ["primary"]
 
 
 # ---------------------------------------------------------------------------
