@@ -43,7 +43,7 @@ _GOOD_ENV = {
     "RED_TEAM_TARGET_URL": "http://localhost:8000",
     "RED_TEAM_TARGET_HMAC_SECRET": "test-secret-not-real",
     "RED_TEAM_TARGET_USER_ID": "1",
-    "RED_TEAM_TARGET_SENTINEL_PATIENT_IDS": "999100,999999",
+    "RED_TEAM_TARGET_SENTINEL_PATIENT_IDS": "999001,999100,999999",
     "HMAC_MAX_AGE_SECONDS": "30",
 }
 
@@ -175,7 +175,7 @@ def test_constructor_refuses_real_looking_patient_id() -> None:
             base_url="http://localhost:8000",
             hmac_secret="x",
             user_id=1,
-            sentinel_patient_ids=(42,),  # outside 999100-999999
+            sentinel_patient_ids=(42,),  # outside 999001-999999
             http_client=MagicMock(),
         )
 
@@ -191,8 +191,34 @@ def test_chat_refuses_non_sentinel_patient_id() -> None:
     with pytest.raises(SentinelPatientIdError):
         client.chat(
             [Message(role="user", content="hi")],
-            patient_id=999099,  # one below the sentinel floor
+            patient_id=999000,  # one below the new sentinel floor (999001)
         )
+
+
+def test_chat_accepts_expanded_low_sentinel() -> None:
+    """Regression guard for the 2026-05-12 sentinel-range expansion.
+    999001 was REJECTED under the old [999100, 999999] convention but
+    is valid under the expanded [999001, 999999] range that matches
+    W2's deployed PersonaMap surface.
+    """
+    captured: dict = {}
+
+    def handler(url, json):
+        captured["body"] = json
+        return _ok_response({"status": "ok", "message": {"role": "assistant", "content": "ok"}})
+
+    http_client = MagicMock()
+    http_client.post.side_effect = handler
+    client = TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="x",
+        user_id=1,
+        sentinel_patient_ids=(999001, 999199),
+        http_client=http_client,
+    )
+    # Both bounds of the new expanded range should be accepted.
+    client.chat([Message(role="user", content="hi")], patient_id=999001)
+    assert captured["body"]["patient_id"] == 999001
 
 
 def test_chat_defaults_to_first_sentinel_when_unspecified() -> None:
@@ -222,7 +248,7 @@ def test_from_env_loads_all_fields() -> None:
     client = TargetClient.from_env(env=dict(_GOOD_ENV))
     assert client.base_url == "http://localhost:8000"
     assert client.user_id == 1
-    assert client.sentinel_patient_ids == (999100, 999999)
+    assert client.sentinel_patient_ids == (999001, 999100, 999999)
     assert client.hmac_max_age_seconds == 30
 
 

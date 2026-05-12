@@ -8,7 +8,7 @@ external call passes through `TargetClient.chat()`, which:
    against turning into a generalized attacker — the Red Team Agent cannot
    redirect attacks to non-authorized targets even if it tried.
 2. HARD-REFUSES non-sentinel patient IDs (project hard rule — sentinel IDs
-   only, 999100-999999 range; never real PHI even in attack payloads).
+   only, 999001-999999 range; never real PHI even in attack payloads).
 3. Signs every request with HMAC-SHA256 using the EXACT same payload scheme
    the target's `verify_hmac` expects:
      f"{user_id}|{patient_id}|{timestamp}|" + "|".join(m.content for m in messages)
@@ -26,7 +26,7 @@ Env vars consumed (full reference in .env.example):
   RED_TEAM_TARGET_URL                 (e.g. http://localhost:8000 via SSH tunnel)
   RED_TEAM_TARGET_HMAC_SECRET         (matches deployed Co-Pilot's OPENEMR_HMAC_SECRET)
   RED_TEAM_TARGET_USER_ID             (default 1; W2 admin parity)
-  RED_TEAM_TARGET_SENTINEL_PATIENT_IDS  (comma-separated, must all be 999100-999999)
+  RED_TEAM_TARGET_SENTINEL_PATIENT_IDS  (comma-separated, must all be 999001-999999)
   HMAC_MAX_AGE_SECONDS                (default 30; signing timestamp = now)
 """
 
@@ -73,11 +73,28 @@ Team Platform attacks ONE specific target (the AgentForge Clinical Co-Pilot)
 plus its development/deployment variants — never an arbitrary system."""
 
 
-_SENTINEL_PATIENT_ID_MIN = 999100
+_SENTINEL_PATIENT_ID_MIN = 999001
 _SENTINEL_PATIENT_ID_MAX = 999999
 """Sentinel patient ID range (project hard rule, ARCH §2.1 +
 RESPONSIBLE_USE.md). Anything outside this range is real-or-could-be-real
-PHI and must never appear in an attack payload."""
+PHI and must never appear in an attack payload.
+
+**Range expanded 2026-05-12** from [999_100, 999_999] (900 slots) to
+[999_001, 999_999] (999 slots) to align with W2's design expansion of
+2026-05-09. The deployed Co-Pilot's PersonaMap maps real PIDs 1–199 to
+sentinels 999_001–999_199; the rich Synthea-generated test fixture
+surface lives in this expanded range (real PIDs 1–99 → sentinels
+999_001–999_099). The prior [999_100, 999_999] convention pre-dated W2's
+expansion and only reached half the fixture surface (real PIDs 100–199).
+
+See `AgentForge agent/document_schemas.py:35-44` for the W2 design
+source. Coordination ticket: `.gauntlet/week3/coordination/
+sentinel-range-expand-to-w2-tate-to-aria.md`.
+
+**Forward-compat caveat:** the user has verified all patient data in the
+*deployed* target is synthetic. For future targets with unknown data
+provenance, the operator MUST verify synthetic-provenance before
+attacking arbitrary sentinels in this range."""
 
 
 _DEFAULT_HMAC_MAX_AGE_SECONDS = 30
@@ -300,7 +317,7 @@ class TargetClient:
         """POST a signed /chat request to the target.
 
         - `patient_id` defaults to the first configured sentinel ID. Must be
-          in 999100-999999 range; raises SentinelPatientIdError otherwise.
+          in 999001-999999 range; raises SentinelPatientIdError otherwise.
         - `session_id` is observability metadata (Langfuse trace grouping).
           Defaults to a fresh uuid4 hex string.
         - `now` is injectable for unit tests; production callers leave it

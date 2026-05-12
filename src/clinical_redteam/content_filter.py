@@ -116,7 +116,7 @@ _REAL_PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "name_plus_dob",
     ),
     # MRN sequences outside the sentinel range. The sentinel range
-    # (999100-999999) is the only allowed numeric patient identifier.
+    # (999001-999999) is the only allowed numeric patient identifier.
     # A 6+ digit MRN-shaped number that's NOT in sentinel range is refused.
     (re.compile(r"\bMRN[#:\s]*(?!999\d{3}\b)\d{6,10}\b", re.I), "mrn_non_sentinel"),
 ]
