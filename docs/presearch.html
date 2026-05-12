@@ -1,0 +1,2017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>W3 Clinical Red Team Platform — Pre-Search Decision Record</title>
+<style>
+  /* === RESET & BASE === */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #1a1a2e;
+    background: #f8f9fa;
+  }
+  a { color: #1a56db; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* === TOP NAV === */
+  #topnav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: #1a1a2e;
+    color: #e8eaf6;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    border-bottom: 3px solid #e53e3e;
+    min-height: 44px;
+  }
+  #topnav a {
+    color: #a5b4fc;
+    font-size: 11px;
+    padding: 4px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  #topnav a:hover { background: #312e81; color: #fff; text-decoration: none; }
+  #topnav .nav-sep { color: #4b5563; font-size: 10px; }
+  #topnav .nav-title { font-weight: 700; font-size: 13px; color: #fff; margin-right: 8px; flex-shrink: 0; }
+  #topnav .phase-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: #6b7280;
+    padding: 0 6px;
+    margin-left: 4px;
+  }
+
+  /* === LAYOUT === */
+  .page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  /* === PAGE HEADER === */
+  .page-header {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .page-header h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 4px; }
+  .page-header .subtitle { font-size: 14px; color: #4b5563; margin-top: 6px; }
+  .page-header .meta { font-size: 12px; color: #64748b; margin-top: 8px; }
+  .page-header .meta span { margin-right: 16px; }
+
+  /* === SUMMARY GRID === */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .summary-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .summary-card h3 { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #64748b; margin-bottom: 6px; }
+  .summary-card .count { font-size: 32px; font-weight: 700; }
+  .summary-card .detail { font-size: 12px; color: #4b5563; margin-top: 4px; }
+  .card-decided .count { color: #065f46; }
+  .card-decided { border-color: #a7f3d0; background: #f0fdf4; }
+  .card-open .count { color: #92400e; }
+  .card-open { border-color: #fde68a; background: #fffbeb; }
+  .card-sections .count { color: #1e40af; }
+  .card-phases .count { color: #6b21a8; }
+
+  /* === PHASE HEADER === */
+  .phase-header {
+    background: #1a1a2e;
+    color: #e8eaf6;
+    padding: 10px 20px;
+    border-radius: 8px 8px 0 0;
+    margin-top: 28px;
+    margin-bottom: 0;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .phase-header + .section { border-top-left-radius: 0; border-top-right-radius: 0; margin-top: 0; }
+
+  /* === SECTION WRAPPERS === */
+  .section {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .section-header:hover { background: #f8fafc; }
+  .section-header h2 { font-size: 16px; color: #1a1a2e; flex: 1; }
+  .section-header .sec-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 2px 8px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+  .section-body { padding: 0; }
+
+  /* === BADGES === */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .badge-decided { background: #d1fae5; color: #065f46; }
+  .badge-open { background: #fef3c7; color: #92400e; }
+  .badge-partial { background: #dbeafe; color: #1e40af; }
+
+  /* === COLLAPSIBLE === */
+  details.block { border-bottom: 1px solid #e2e8f0; }
+  details.block:last-child { border-bottom: none; }
+  details.block > summary {
+    cursor: pointer;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    background: #f8fafc;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  details.block > summary::before { content: "▶"; font-size: 9px; color: #9ca3af; transition: transform .15s; flex-shrink: 0; }
+  details.block[open] > summary::before { transform: rotate(90deg); }
+  details.block > summary:hover { background: #f1f5f9; }
+  .block-body { padding: 16px 20px; }
+
+  /* === QUESTIONS BLOCK === */
+  .questions-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .questions-list li {
+    padding: 6px 0;
+    font-size: 13px;
+    color: #374151;
+    border-bottom: 1px dashed #f1f5f9;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .questions-list li:last-child { border-bottom: none; }
+  .questions-list li::before { content: "?"; font-weight: 700; color: #9ca3af; flex-shrink: 0; font-size: 11px; margin-top: 2px; }
+
+  /* === DECISION PANEL === */
+  .decision-panel {
+    background: #f0fdf4;
+    border: 1px solid #a7f3d0;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 4px 0 12px;
+  }
+  .decision-panel h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #065f46; margin-bottom: 8px; }
+  .decision-panel p, .decision-panel li { font-size: 13px; color: #1a2e1a; }
+  .decision-panel ul { padding-left: 18px; }
+  .decision-panel li { margin-bottom: 4px; }
+
+  /* === ALTERNATIVES TABLE === */
+  table.alt-table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 12px; }
+  table.alt-table th {
+    background: #f1f5f9;
+    color: #374151;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 6px 10px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+  }
+  table.alt-table td {
+    padding: 7px 10px;
+    border: 1px solid #e2e8f0;
+    vertical-align: top;
+    line-height: 1.4;
+  }
+  table.alt-table tr:nth-child(even) td { background: #fafbfc; }
+  table.alt-table tr:hover td { background: #f0f7ff; }
+  .alt-selected { font-weight: 700; color: #065f46; }
+  .alt-rejected { color: #6b7280; }
+  .tag-selected { background: #d1fae5; color: #065f46; border-radius: 8px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
+  .tag-rejected { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
+  .tag-deferred { background: #fef3c7; color: #92400e; border-radius: 8px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
+
+  /* === TRADEOFFS === */
+  .tradeoffs-list {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0;
+  }
+  .tradeoffs-list li {
+    padding: 5px 0 5px 18px;
+    font-size: 13px;
+    color: #374151;
+    position: relative;
+    border-bottom: 1px solid #f9fafb;
+  }
+  .tradeoffs-list li:last-child { border-bottom: none; }
+  .tradeoffs-list li::before { content: "—"; position: absolute; left: 0; color: #e53e3e; font-weight: 700; }
+
+  /* === OPEN QUESTIONS === */
+  .open-q-list {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0;
+  }
+  .open-q-list li {
+    padding: 7px 10px;
+    font-size: 13px;
+    background: #fffbeb;
+    border-left: 3px solid #f59e0b;
+    margin-bottom: 6px;
+    border-radius: 0 4px 4px 0;
+  }
+  .open-q-list li .oq-flag {
+    font-size: 10px;
+    font-weight: 700;
+    color: #92400e;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  /* === REFERENCES === */
+  .ref-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0;
+  }
+  .ref-chip {
+    background: #e0e7ff;
+    color: #3730a3;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-family: monospace;
+  }
+
+  /* === SUB-LABEL === */
+  .sub-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #6b7280;
+    margin: 12px 0 6px;
+  }
+
+  /* === PRINT === */
+  @media print {
+    #topnav { display: none; }
+    .page { padding: 0; max-width: 100%; }
+    details.block { page-break-inside: avoid; }
+    body { font-size: 12px; }
+    .summary-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav id="topnav">
+  <span class="nav-title">W3 Pre-Search</span>
+  <span class="nav-sep">|</span>
+  <span class="phase-label">Phase 1</span>
+  <a href="#s1">§1 Domain</a>
+  <a href="#s2">§2 Scale</a>
+  <a href="#s3">§3 Reliability</a>
+  <a href="#s4">§4 Team</a>
+  <span class="nav-sep">|</span>
+  <span class="phase-label">Phase 2</span>
+  <a href="#s5">§5 Framework</a>
+  <a href="#s6">§6 LLM</a>
+  <a href="#s7">§7 Tools</a>
+  <a href="#s8">§8 Observability</a>
+  <a href="#s9">§9 Eval</a>
+  <a href="#s10">§10 Verification</a>
+  <span class="nav-sep">|</span>
+  <span class="phase-label">Phase 3</span>
+  <a href="#s11">§11 Failures</a>
+  <a href="#s12">§12 Security</a>
+  <a href="#s13">§13 Testing</a>
+  <a href="#s14">§14 OSS</a>
+  <a href="#s15">§15 Deploy</a>
+  <a href="#s16">§16 Iteration</a>
+</nav>
+
+<div class="page">
+
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <h1>W3 Clinical Red Team Platform — Pre-Search Decision Record</h1>
+    <div class="subtitle">Complete decision record for all 16 checklist sections. Per-section: questions asked, decision made, alternatives rejected, tradeoffs owned, open items, and source references.</div>
+    <div class="meta">
+      <span><strong>Platform:</strong> Clinical Red Team Platform (W3)</span>
+      <span><strong>Target:</strong> AgentForge Clinical Co-Pilot at https://142-93-242-40.nip.io</span>
+      <span><strong>Date:</strong> 2026-05-11</span>
+      <span><strong>Source:</strong> Presearch.pdf 16-section checklist</span>
+    </div>
+  </div>
+
+  <!-- SUMMARY GRID -->
+  <div class="summary-grid">
+    <div class="summary-card card-decided">
+      <h3>Sections Decided</h3>
+      <div class="count">16</div>
+      <div class="detail">All 16 sections locked. No open architecture decisions blocking Phase 1.</div>
+    </div>
+    <div class="summary-card card-open">
+      <h3>Residual Open Items</h3>
+      <div class="count">6</div>
+      <div class="detail">Operational questions (HMAC rotation policy, test account, droplet spec, CI repo, cost cap tuning, WhiteRabbit-Neo availability). None block MVP.</div>
+    </div>
+    <div class="summary-card card-sections">
+      <h3>Architecture Source</h3>
+      <div class="count">ARCH</div>
+      <div class="detail">ARCHITECTURE.md is the canonical architecture reference. THREAT_MODEL.md covers attack surface. Every decision in this document cites the relevant section.</div>
+    </div>
+    <div class="summary-card card-phases">
+      <h3>Phases</h3>
+      <div class="count">3</div>
+      <div class="detail">Phase 1: constraints (§1–§4). Phase 2: architecture (§5–§10). Phase 3: post-stack (§11–§16).</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 1 -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="phase-header">Phase 1 — Define Your Constraints (§1–§4)</div>
+
+  <!-- §1 DOMAIN SELECTION -->
+  <div class="section" id="s1">
+    <div class="section-header">
+      <span class="sec-num">§1</span>
+      <h2>Domain Selection</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>Which domain: healthcare, insurance, finance, legal, or custom?</li>
+            <li>What specific use cases will you support?</li>
+            <li>What are the verification requirements for this domain?</li>
+            <li>What data sources will you need access to?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <p><strong>Domain:</strong> Healthcare — inherited from the target system (AgentForge Clinical Co-Pilot) and from the companion repo's clinical context. The platform itself is a security-tool genre application, but every attack category it probes is healthcare-specific (PHI leakage, clinical note injection, patient identity confusion).</p>
+            <p style="margin-top:8px"><strong>Use cases — 4 personas (per USERS.md):</strong></p>
+            <ul>
+              <li><strong>Security Engineer:</strong> runs the daemon, reviews findings, promotes regression cases</li>
+              <li><strong>Clinical AI Platform Owner:</strong> receives vulnerability reports and prioritizes remediation</li>
+              <li><strong>Hospital CISO:</strong> reads coverage dashboards and high/critical findings for risk decisions</li>
+              <li><strong>Compliance Officer:</strong> uses audit trail and NIST AI RMF mapping for governance documentation</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Verification requirements:</strong> Per-attack PASS / FAIL / PARTIAL / UNCERTAIN verdict rendered by the Judge Agent using per-category rubric criteria. Ground-truth calibration dataset is Phase 2; MVP relies on rubric-only verdicts.</p>
+            <p style="margin-top:8px"><strong>Data sources:</strong></p>
+            <ul>
+              <li>Live target Co-Pilot at <code>https://142-93-242-40.nip.io</code> (HMAC-signed HTTP; all eval results require live target)</li>
+              <li>OpenRouter as model routing layer for all platform LLM calls</li>
+              <li>Langfuse for platform and target observability (shared dashboard)</li>
+              <li>67-case W2 eval suite promoted as Red Team seed cases</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered and Rejected</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Alternative</th><th>Pros</th><th>Cons</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Healthcare (target-inherited) <span class="tag-selected">Selected</span></td>
+              <td>Direct alignment with live target; real finding (C-7) already documented; PHI-leakage attack class is well-defined; OWASP LLM + MITRE ATLAS have healthcare-specific entries</td>
+              <td>Highest regulatory sensitivity domain; requires synthetic data discipline in all attack payloads</td>
+              <td>Selected. Inherited from companion repo context; no alternative was seriously evaluated.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Finance / Insurance / Legal <span class="tag-rejected">Rejected</span></td>
+              <td>Lower PHI sensitivity; broader market</td>
+              <td>No live target in this domain; no existing eval suite; no pre-built tooling</td>
+              <td>Rejected. No target exists. Building against a synthetic finance target in 5 days is not feasible.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Healthcare domain imposes strict synthetic-data discipline. All attack payloads must use synthetic patient identifiers. Real PHI appearing in any attack payload is a hard-stop violation.</li>
+            <li>The platform's security claims are scoped to the AgentForge Co-Pilot only. Generalizing findings to other clinical AI systems requires re-running the platform against those targets.</li>
+            <li>The four-persona scope is aspirational at 5-day scale. In practice, the Security Engineer persona drives MVP operation; CISO and Compliance personas are served by the audit trail and vulnerability report format.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md (exec summary)</span>
+            <span class="ref-chip">THREAT_MODEL.md §1</span>
+            <span class="ref-chip">USERS.md (Phase 2 artifact)</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §2 SCALE & PERFORMANCE -->
+  <div class="section" id="s2">
+    <div class="section-header">
+      <span class="sec-num">§2</span>
+      <h2>Scale &amp; Performance</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>Expected query volume?</li>
+            <li>Acceptable latency for responses?</li>
+            <li>Concurrent user requirements?</li>
+            <li>Cost constraints for LLM calls?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <ul>
+              <li><strong>Volume:</strong> 10–100 attacks per session at MVP; continuous daemon may accumulate 200–500 attacks/week in sustained mode. Bounded by cost cap, not infrastructure.</li>
+              <li><strong>Latency:</strong> Not user-facing. Adversarial testing is an offline, background workload. Per-attack cycle target: 5–30 seconds (OpenRouter call + target call + Judge call). No latency SLA required.</li>
+              <li><strong>Concurrency:</strong> Single-process sync for MVP. One LangGraph state machine, one <code>while True:</code> loop. Phase 3 concern: Redis-fronted multi-worker fleet if throughput becomes the bottleneck at 10K+ attacks.</li>
+              <li><strong>Cost cap:</strong> <code>MAX_SESSION_COST_USD</code> env var; default $10/session. Total W3 dev burn budget: ~$5–15 on LLM calls. Weekly budget projections: $5–15 (MVP), $80–150 (1K attacks), $4–10K+ (100K attacks, requires architectural rethink).</li>
+            </ul>
+          </div>
+          <div class="sub-label">Cost scaling by volume</div>
+          <table class="alt-table">
+            <tr><th>Scale</th><th>Attacks/week</th><th>Est. LLM cost</th><th>Architectural change needed</th></tr>
+            <tr><td>MVP (5-day)</td><td>~100</td><td>$5–15</td><td>None. Single process, local.</td></tr>
+            <tr><td>100 runs</td><td>100</td><td>$10–20</td><td>None. Judge (Sonnet 4.6) dominates.</td></tr>
+            <tr><td>1K runs</td><td>1,000</td><td>$80–150</td><td>Async Red Team within category; OpenRouter rate limits become ceiling.</td></tr>
+            <tr><td>10K runs</td><td>10,000</td><td>$600–1,200</td><td>Judge model swap to Haiku for triage; Redis queue for attack jobs.</td></tr>
+            <tr><td>100K runs</td><td>100,000</td><td>$4,000–10,000+</td><td>Distributed Red Team workers (Celery); Judge pool; Langfuse retention upgrade.</td></tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Single-process sync means one slow OpenRouter or target call stalls the entire loop. Per-call timeouts and circuit breaker mitigate but do not eliminate this.</li>
+            <li>$10/session cap limits overnight runs. A session that costs $0.10/attack halts after ~100 attacks. Tune after seeing real per-attack costs from first runs.</li>
+            <li>Cost projections at 10K+ are model-price-dependent and will diverge from actuals as OpenRouter pricing shifts.</li>
+            <li>Very long multi-turn sequences (8+ turns) consume session budget disproportionately. Multi-turn depth is a known constraint at MVP.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Operational — non-blocking</span>What is the actual OpenRouter rate limit on the accounts being used? This is the real throughput ceiling at MVP, not infrastructure.</li>
+            <li><span class="oq-flag">Operational — non-blocking</span>Should the cost cap default be higher ($25?) to allow longer overnight runs, with a daily-spend alert instead of a hard halt? Tune after first full overnight run.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.2 (daemon loop)</span>
+            <span class="ref-chip">ARCHITECTURE.md §8.1 (cost caps)</span>
+            <span class="ref-chip">presearch-ops-research.md §2</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §3 RELIABILITY -->
+  <div class="section" id="s3">
+    <div class="section-header">
+      <span class="sec-num">§3</span>
+      <h2>Reliability Requirements</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>What is the cost of a wrong answer in your domain?</li>
+            <li>What verification is non-negotiable?</li>
+            <li>Human-in-the-loop requirements?</li>
+            <li>Audit/compliance needs?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <p><strong>Cost of wrong answer:</strong> False negatives (missed vulnerabilities) cost more than false positives in this domain. A missed PHI-leakage exploit means real patient data may leak in production; a false positive wastes engineering time. The platform biases toward escalation on uncertainty.</p>
+            <p style="margin-top:8px"><strong>Non-negotiable verification:</strong> Human gate on any high or critical severity finding before it is filed. Judge uncertainty (confidence &lt; 0.70) escalates to human review queue. No autonomous filing of high/critical reports.</p>
+            <p style="margin-top:8px"><strong>Human-in-the-loop gates (per ARCHITECTURE.md §7.2):</strong></p>
+            <ul>
+              <li>High/critical severity reports: human review required before <code>status: draft-pending-review</code> transitions to <code>status: filed</code></li>
+              <li>UNCERTAIN Judge verdict: enters human review queue regardless of severity</li>
+              <li>Cost ceiling hit: daemon halts; human resumes with explicit cost override</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Audit/compliance:</strong> NIST AI RMF function mapping documented in ARCHITECTURE.md §7.4 (Govern/Map/Measure/Manage). HHS AI Strategy alignment referenced in ops research. Every autonomous action logged with agent name, version, inputs, outputs, human-approval status, and timestamp to <code>logs/</code>.</p>
+          </div>
+          <div class="sub-label">False negative vs. false positive cost asymmetry</div>
+          <table class="alt-table">
+            <tr><th>Error type</th><th>What happens</th><th>Cost</th></tr>
+            <tr>
+              <td>False negative (missed vulnerability)</td>
+              <td>Real exploit goes undiscovered; PHI leaks in production; clinical decisions made on manipulated output</td>
+              <td><strong>HIGH</strong> — patient harm possible; C-7 class already confirmed as HIGH-severity deferred</td>
+            </tr>
+            <tr>
+              <td>False positive (safe flagged as vulnerable)</td>
+              <td>Engineering time wasted chasing non-issue; platform credibility erodes with CISO</td>
+              <td>MEDIUM — recoverable; no patient harm</td>
+            </tr>
+            <tr>
+              <td>Judge calibration drift</td>
+              <td>Verdicts shift from ground truth silently; regression harness looks green while real vulnerabilities exist</td>
+              <td>COMPOUNDING — false negatives accumulate without visibility</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Human gates on high/critical reports mean a slow reviewer blocks the Orchestrator's ability to declare coverage complete. Mitigated by: autonomous continuous testing continues; only report-filing is gated, not discovery.</li>
+            <li>Erring toward escalation on uncertainty increases human review workload in the short term. This is the correct tradeoff for a healthcare security platform.</li>
+            <li>The platform cannot force a fix — it only documents and reports. Remediation is owned by the Co-Pilot team. This is correct scoping but limits standalone value.</li>
+            <li>HHS AI compliance framing is aspirational at 5-day project scale. Honest framing: designed to align with HHS AI governance expectations; not yet audited against them.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §7 (trust boundaries)</span>
+            <span class="ref-chip">ARCHITECTURE.md §7.2 (human gates)</span>
+            <span class="ref-chip">ARCHITECTURE.md §7.3 (audit log)</span>
+            <span class="ref-chip">ARCHITECTURE.md §7.4 (NIST AI RMF)</span>
+            <span class="ref-chip">presearch-ops-research.md §3</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §4 TEAM & SKILL CONSTRAINTS -->
+  <div class="section" id="s4">
+    <div class="section-header">
+      <span class="sec-num">§4</span>
+      <h2>Team &amp; Skill Constraints</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>Familiarity with agent frameworks?</li>
+            <li>Experience with your chosen domain?</li>
+            <li>Comfort with eval/testing frameworks?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <ul>
+              <li><strong>Team:</strong> Solo build — Cory (operator) + Tate (architecture lead) for the 5-day W3 window. Reassess for Phase 2 implementation if scope expands.</li>
+              <li><strong>Agent framework familiarity:</strong> Known-cost. LangGraph and Langfuse were built, debugged, and shipped in W1/W2. Learning curve is compressed; graph topology patterns are already in memory.</li>
+              <li><strong>Domain familiarity:</strong> Healthcare context is inherited from W1/W2 Co-Pilot work. Adversarial security specifically is lower-familiarity territory — compensated by OWASP LLM Top 10 v2025 + OWASP ASI Top 10 2026 + MITRE ATLAS framework anchoring. No invented taxonomy.</li>
+              <li><strong>Eval/testing:</strong> Comfortable with pytest + mocked LLM responses from W1/W2. Judge-as-evaluator pattern is the novel piece; rubric design is the skill gap to watch.</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Solo build means no code review by a second engineer. Mitigated by: CI gate, smoke tests, and explicit PR-checklist discipline.</li>
+            <li>Adversarial security domain is lower-familiarity than clinical AI. OWASP/MITRE anchoring compensates for lack of offensive security experience, but the rubric design quality is the key output that depends on domain judgment.</li>
+            <li>The 5-day window means any unexpected skill gap (e.g., novel LangGraph API behavior) directly compresses build time. No buffer exists for major architectural pivots.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.1 (LangGraph rationale)</span>
+            <span class="ref-chip">THREAT_MODEL.md §2 (framework anchors)</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 2 -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="phase-header">Phase 2 — Architecture Discovery (§5–§10)</div>
+
+  <!-- §5 AGENT FRAMEWORK -->
+  <div class="section" id="s5">
+    <div class="section-header">
+      <span class="sec-num">§5</span>
+      <h2>Agent Framework Selection</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>LangChain vs LangGraph vs CrewAI vs custom?</li>
+            <li>Single agent or multi-agent architecture?</li>
+            <li>State management requirements?</li>
+            <li>Tool integration complexity?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <p><strong>Framework:</strong> LangGraph. Documented in ARCHITECTURE.md §3.1.</p>
+            <p style="margin-top:8px"><strong>Architecture:</strong> Multi-agent — 4 agents with deliberately separated responsibilities:</p>
+            <ul>
+              <li><strong>Red Team Agent</strong> — generates and mutates attacks</li>
+              <li><strong>Judge Agent</strong> — independently evaluates attack success (never sees Red Team hypothesis before verdict)</li>
+              <li><strong>Orchestrator Agent</strong> — prioritizes coverage and controls cost (pure Python rules, no LLM at MVP)</li>
+              <li><strong>Documentation Agent</strong> — converts validated exploits into structured reports</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Rationale for multi-agent:</strong> A system that both generates and judges attacks has a conflict of interest by design. Red Team incentivizes maximizing exploit discovery; Judge must remain unbiased and deterministic. Combining them in one agent context weakens both.</p>
+            <p style="margin-top:8px"><strong>State management:</strong> TypedDict state with filesystem checkpointing (not LangGraph built-in checkpointer). Rationale: simpler, JSON-serializable, survives process crashes without pickle issues.</p>
+            <p style="margin-top:8px"><strong>Tool integration:</strong> 7 named tools (TargetClient, RegressionStore, CoverageStateReader, ObservabilityWriter, SeedLoader, CriteriaLoader, VulnerabilityReporter). Each has defined input/output schema. See §7.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered and Rejected</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Framework</th><th>Pros</th><th>Cons</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">LangGraph <span class="tag-selected">Selected</span></td>
+              <td>Explicit graph topology; deterministic edge routing; Langfuse-native callback; TypedDict state typing; pause-resume via checkpointing; multi-provider LLM support; known-cost from W1/W2</td>
+              <td>Graph abstraction adds boilerplate for simple pipelines; async mental model differs from sync</td>
+              <td>Selected. Explicit edge typing enforces the hypothesis-stripping contract at schema boundary — the first-order requirement.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">CrewAI <span class="tag-rejected">Rejected</span></td>
+              <td>Role-based agent definition is readable; lower-code for structured multi-agent teams</td>
+              <td>Default inter-agent context sharing is incompatible with Red Team/Judge isolation requirement. Shared context = conflict of interest by design.</td>
+              <td>Rejected. Fundamental architecture incompatibility — not a preference.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">AutoGen (Microsoft) <span class="tag-rejected">Rejected</span></td>
+              <td>Strong community; good at multi-turn agent dialogue</td>
+              <td>Conversation graph makes it natural for agents to share reasoning chains — opposite of Judge isolation requirement. No first-class graph; harder to enforce hypothesis-stripping at schema boundary.</td>
+              <td>Rejected. Same architectural incompatibility as CrewAI on isolation requirement.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Custom Python (no framework) <span class="tag-deferred">Deferred to Phase 3</span></td>
+              <td>Total control; no abstraction overhead; simpler to audit</td>
+              <td>Reinvents graph primitives, state management, checkpoint/resume; 5-day build cannot afford this overhead</td>
+              <td>Valid Phase 3 option if LangGraph proves insufficient at scale. Not feasible for 5-day build.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">OpenAI Swarm (experimental) <span class="tag-rejected">Rejected</span></td>
+              <td>Lightweight handoffs between agents</td>
+              <td>Experimental status; no first-class graph or checkpoint/resume; handoffs are ephemeral with no state persistence</td>
+              <td>Rejected. Experimental risk unacceptable on a 5-day build.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>LangGraph graph abstraction adds boilerplate vs. raw Python for simple pipelines. The four-agent DAG is explicit enough to justify this overhead, but any developer unfamiliar with LangGraph faces a learning curve.</li>
+            <li>LangGraph version pinning risk. Significant API surface changes occurred between 0.1 and 0.2. Version pinned in requirements; documented in SETUP.md.</li>
+            <li>Graph sync vs. async: MVP uses sync execution. Sync is simpler to audit; async buys throughput not needed at MVP volume. Phase 2 multi-category parallelism requires LangGraph async path.</li>
+            <li>LangGraph does not natively enforce type safety at edges. TypedDict provides IDE hints; Pydantic v2 or jsonschema validation is required at every inter-agent boundary for runtime enforcement.</li>
+            <li>No prior art for adversarial red-team graph with hypothesis stripping in LangGraph ecosystem. First version will hit undocumented edge cases.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.1 (alternatives table)</span>
+            <span class="ref-chip">ARCHITECTURE.md §3.2 (state management)</span>
+            <span class="ref-chip">ARCHITECTURE.md §0 (why multi-agent)</span>
+            <span class="ref-chip">presearch-architecture-research.md §5</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §6 LLM SELECTION -->
+  <div class="section" id="s6">
+    <div class="section-header">
+      <span class="sec-num">§6</span>
+      <h2>LLM Selection</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>GPT-5 vs Claude vs open source?</li>
+            <li>Function calling support requirements?</li>
+            <li>Context window needs?</li>
+            <li>Cost per query acceptable?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — criteria-first, not model-name-first (per ARCHITECTURE.md §8.2)</h4>
+            <ul>
+              <li><strong>Red Team Agent:</strong> Open-weight model via OpenRouter. Default: Dolphin-Mixtral or Qwen-class. Key criterion: permissive safety posture (will not refuse security workflows). Frontier models explicitly rejected for this role — safety training is an obstacle, not a feature, for adversarial generation.</li>
+              <li><strong>Judge Agent:</strong> Anthropic Claude Sonnet-class via OpenRouter. Key criteria: frontier accuracy, follows evaluation instructions including security content, consistent structured output, cross-provider independence from Red Team.</li>
+              <li><strong>Documentation Agent:</strong> Anthropic Claude Sonnet-class via OpenRouter; Haiku-class fallback. Report quality is bounded by FAIL verdict count, not model name.</li>
+              <li><strong>Orchestrator Agent:</strong> Pure Python rules, no LLM for MVP. Optional Haiku-class augmentation in Phase 2 for autonomous category discovery.</li>
+              <li><strong>Routing layer:</strong> OpenRouter for all hosted model calls. All model IDs read from environment variables.</li>
+            </ul>
+            <p style="margin-top:8px"><strong>WhiteRabbit-Neo note:</strong> Purpose-built for offensive security (Kindo, Llama fine-tune); skipped for MVP because not confirmed on OpenRouter at time of decision. Revisit at build-start — 5-minute availability check required. If available, it is the most defensible Red Team model pick.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered and Rejected</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Model / Option</th><th>Role</th><th>Pros</th><th>Cons</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Dolphin-Mixtral / Dolphin-Mistral <span class="tag-selected">Selected</span></td>
+              <td>Red Team (default)</td>
+              <td>Community-tuned to reduce refusals; executes security tasks; broadly available on OpenRouter; low cost; 32K context</td>
+              <td>Lower quality than frontier models for complex attacks; mutation diversity unverified</td>
+              <td>Selected as reliable fallback if WhiteRabbit-Neo unavailable.</td>
+            </tr>
+            <tr>
+              <td>WhiteRabbit-Neo (Kindo) <span class="tag-deferred">Check at build-start</span></td>
+              <td>Red Team (preferred)</td>
+              <td>Purpose-built for offensive security; will not refuse any security workflow; most defensible pick architecturally</td>
+              <td>Not confirmed on OpenRouter at decision time; local Ollama infrastructure too heavy for 5-day build</td>
+              <td>If on OpenRouter at build-start: use it. Otherwise fall back to Dolphin-Mixtral. 5-minute check.</td>
+            </tr>
+            <tr>
+              <td>Qwen 2.5 72B / Qwen 3 <span class="tag-selected">Selected (alternative)</span></td>
+              <td>Red Team (alternative)</td>
+              <td>Less restrictive than Llama 3.3 on many security tasks; best cost-to-quality of open models on OpenRouter; 128K context</td>
+              <td>Less characterized for offensive security than Dolphin variants</td>
+              <td>Valid Red Team alternative if Dolphin-Mixtral produces low FAIL rate.</td>
+            </tr>
+            <tr>
+              <td class="alt-selected">Claude Sonnet-class <span class="tag-selected">Selected</span></td>
+              <td>Judge + Documentation</td>
+              <td>Frontier accuracy; follows evaluation instructions; consistent structured output; 200K context; cross-provider from Red Team</td>
+              <td>Mid-high cost; same provider as Documentation creates shared failure mode</td>
+              <td>Selected. Cross-provider independence from Llama-family Red Team is the key criterion.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">GPT-4o-class (OpenAI) <span class="tag-deferred">Judge fallback</span></td>
+              <td>Judge fallback</td>
+              <td>Handles evaluation tasks well; 128K context; different provider than primary Judge</td>
+              <td>Higher cost; adds second provider dependency</td>
+              <td>Phase 2 Judge fallback only. Not needed for MVP.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">OpenAI / Anthropic frontier models for Red Team <span class="tag-rejected">Rejected</span></td>
+              <td>Red Team</td>
+              <td>Highest quality attack generation in general</td>
+              <td>Both OpenAI and Anthropic are trained to refuse jailbreak-generation requests. Safety training is a feature for clinical synthesis; it is an obstacle for adversarial generation.</td>
+              <td>Rejected. Structurally incompatible with Red Team role requirements.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Local/self-hosted (Ollama, llama.cpp) <span class="tag-deferred">Phase 3</span></td>
+              <td>Red Team</td>
+              <td>Fully permissive; near-zero cost; no data leaves local network</td>
+              <td>Infrastructure setup cost prohibitive for 5-day build</td>
+              <td>Phase 3 option if cost at 10K+ runs becomes the binding constraint.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Open-weight models produce lower-quality attacks than frontier models. Accepted in exchange for avoiding frontier refusal. Mutation loops compensate by generating N variants; quality is measured by Judge FAIL rate distribution, not model name.</li>
+            <li>OpenRouter sees all platform prompts, including attack payloads. Acceptable for security research — target sentinel-pid boundary ensures no real PHI in the flow. Attack payloads are synthetic.</li>
+            <li>Model deprecation risk. OpenRouter periodically deprecates older model IDs. Specific versions pinned in config; fallback chain absorbs short-term outages.</li>
+            <li>Judge and Documentation sharing the same Anthropic provider creates a shared failure mode. GPT-class fallback is the Judge mitigation; Documentation can queue on outage.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Check at build-start — 5 minutes</span>WhiteRabbit-Neo availability on OpenRouter. If available, swap in as Red Team default. If not, Dolphin-Mixtral is the fallback. No code changes required — env var swap only.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §8.2 (LLM selection criteria)</span>
+            <span class="ref-chip">presearch-architecture-research.md §6</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §7 TOOL DESIGN -->
+  <div class="section" id="s7">
+    <div class="section-header">
+      <span class="sec-num">§7</span>
+      <h2>Tool Design</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>What tools does your agent need?</li>
+            <li>External API dependencies?</li>
+            <li>Mock vs real data for development?</li>
+            <li>Error handling per tool?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — 7 named tools (per ARCHITECTURE.md §2 and §3.2)</h4>
+            <ul>
+              <li><strong>TargetClient</strong> — HMAC-signed HTTP to the Co-Pilot (<code>/chat</code>, <code>/graph_chat</code>, <code>/attach_and_extract</code>). Red Team only external call. Per-PRD: live target required for all eval results.</li>
+              <li><strong>RegressionStore</strong> — read/write confirmed exploit YAML files under <code>evals/regression/</code></li>
+              <li><strong>CoverageStateReader</strong> — reads <code>evals/coverage.md</code> and per-run <code>manifest.json</code> (Orchestrator input)</li>
+              <li><strong>ObservabilityWriter</strong> — emits Langfuse spans at every LLM call boundary</li>
+              <li><strong>SeedLoader</strong> — reads <code>evals/seed/category/*.yaml</code> (Red Team input)</li>
+              <li><strong>CriteriaLoader</strong> — reads <code>evals/criteria/category.yaml</code> (Judge input)</li>
+              <li><strong>VulnerabilityReporter</strong> — writes <code>evals/vulnerabilities/VULN-NNN-DRAFT.md</code> (Documentation Agent output)</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Mock vs. real:</strong> <code>--dry-run</code> flag mocks TargetClient with canned fixture response for local dev iteration. All eval results used in deliverables require live target calls.</p>
+          </div>
+          <div class="sub-label">Per-tool error handling</div>
+          <table class="alt-table">
+            <tr><th>Tool</th><th>Failure mode</th><th>Handling</th></tr>
+            <tr><td>TargetClient 5xx / network error</td><td>Connection or server error</td><td>Exponential backoff (3 retries); circuit breaker after 5 consecutive failures; Orchestrator pauses session on sustained unavailability</td></tr>
+            <tr><td>TargetClient 429 rate-limit</td><td>OpenEMR rate limit hit</td><td>Respect Retry-After header; Orchestrator reduces attack frequency for remainder of session</td></tr>
+            <tr><td>TargetClient 401 (HMAC rejected)</td><td>Credential mismatch / rotation</td><td>Hard fail + alert; requires credential rotation by operator</td></tr>
+            <tr><td>RegressionStore corrupt YAML</td><td>Manual edit corrupted file</td><td>Log + skip corrupt case; alert; do not halt daemon</td></tr>
+            <tr><td>CoverageStateReader missing manifest</td><td>First run; no prior state</td><td>Initialize empty coverage state; not an error</td></tr>
+            <tr><td>ObservabilityWriter Langfuse unavailable</td><td>Network outage to Langfuse</td><td>Degrade gracefully; log spans to stdout as structured JSON; do not halt daemon</td></tr>
+            <tr><td>VulnerabilityReporter filesystem write fail</td><td>Disk full; permissions</td><td>Alert + log to stdout; do not halt daemon (draft report loss is recoverable; daemon halt is not)</td></tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered and Rejected</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Dimension</th><th>Alternative</th><th>Verdict</th></tr>
+            <tr><td>Regression store format</td><td>SQLite database</td><td>Rejected. YAML + git provides version history, diff-readable change tracking, and no database process dependency. SQL adds complexity for no Phase 1 gain.</td></tr>
+            <tr><td>Coverage state persistence</td><td>Redis or in-memory dict</td><td>Redis rejected (infrastructure dependency). In-memory dict rejected (lost on crash). Filesystem wins: survives process crashes, zero extra dependencies.</td></tr>
+            <tr><td>Target authentication</td><td>Session-cookie-only auth</td><td>Rejected. PRD specifies HMAC-signed HTTP as the documented protocol. HMAC credentials stored in env, never in code.</td></tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>HMAC credential management is manual. Credentials must be set in env vars and never committed to git. Pre-commit hook must scan for HMAC secret patterns.</li>
+            <li>Filesystem-based tools are single-process. Phase 3 parallelism requires file locking. Not a concern at MVP single-process operation.</li>
+            <li>YAML regression store is human-editable — a feature (humans can adjust exploit status) and a risk (manual edits can corrupt the store). CI runs YAML schema validation on every regression file to catch corruption.</li>
+            <li>The TargetClient mock mode can drift from real target behavior. Engineers must re-verify against live target before filing results.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Operational — document in runbook</span>What is the HMAC key rotation policy? If the Co-Pilot target rotates its key (scheduled or incident-triggered), the platform needs a corresponding update. Must be in the runbook, not tribal knowledge.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §2 (agent specs)</span>
+            <span class="ref-chip">ARCHITECTURE.md §3.2 (tool list)</span>
+            <span class="ref-chip">ARCHITECTURE.md §3.4 (error handling)</span>
+            <span class="ref-chip">presearch-architecture-research.md §7</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §8 OBSERVABILITY -->
+  <div class="section" id="s8">
+    <div class="section-header">
+      <span class="sec-num">§8</span>
+      <h2>Observability Strategy</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>LangSmith vs Braintrust vs other?</li>
+            <li>What metrics matter most?</li>
+            <li>Real-time monitoring needs?</li>
+            <li>Cost tracking requirements?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — Langfuse Hobby (free tier)</h4>
+            <p>Decisive reason: the target Co-Pilot already emits Langfuse traces from W1/W2. Using Langfuse means a single dashboard surfaces inter-agent traces from BOTH the attacker platform AND the target internals — the grader question "trace a vulnerability finding back through all agents that produced it" is answered with one dashboard. Any other tool requires two separate observability stacks.</p>
+            <p style="margin-top:8px"><strong>Integration pattern:</strong> LangGraph native Langfuse callback handler. ObservabilityWriter tool emits spans at LLM call boundaries. OpenRouter cost attribution via <code>x-openrouter-cost</code> header parsed into Langfuse custom attribute (one function, ~30 min setup).</p>
+            <p style="margin-top:8px"><strong>Key metrics tracked:</strong> per-attack cost, verdict distribution (PASS/FAIL/PARTIAL/UNCERTAIN), per-category FAIL rate, Judge confidence histogram, session total cost vs. cap, agent execution latency per span.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Evaluated (with live pricing as of 2026-05-11)</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Tool</th><th>Free tier</th><th>Inter-agent graph</th><th>LangGraph integration</th><th>Data retention (free)</th><th>Target Co-Pilot already uses it</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected"><strong>Langfuse</strong> <span class="tag-selected">Selected</span></td>
+              <td>50k obs/month, $0</td>
+              <td>Yes — native LangGraph</td>
+              <td>Native callback handler</td>
+              <td>30 days</td>
+              <td><strong>Yes (W1/W2)</strong></td>
+              <td>Selected. Unified trace story with target is the decisive factor.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">LangSmith</td>
+              <td>5k traces/month, $0; +$39/seat paid</td>
+              <td>Yes — first-class (sibling product to LangGraph)</td>
+              <td>First-class (zero-config)</td>
+              <td>Not stated clearly</td>
+              <td>No</td>
+              <td>Rejected. Competitive on inter-agent traces; loses on unified-dashboard-with-target reason. If the platform were standalone, LangSmith and Langfuse would be roughly equivalent.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Braintrust</td>
+              <td>1 GB + $4/GB, $0 base; 14-day retention</td>
+              <td>Partial (SDK-level spans only)</td>
+              <td>Manual span creation at each LangGraph node — 4–6h setup</td>
+              <td>14 days</td>
+              <td>No</td>
+              <td>Rejected. Excellent eval-calibration UX but weak LangGraph native traces; 14-day retention; manual integration cost.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Helicone</td>
+              <td>10k requests/month, $0; 7-day retention</td>
+              <td>No — proxy-level only; no LangGraph graph rendering</td>
+              <td>Proxy-based; LangGraph internal state invisible</td>
+              <td>7 days (insufficient)</td>
+              <td>No</td>
+              <td>Rejected. Proxy-based architecture misses multi-agent LangGraph execution graphs. 7-day retention is insufficient even for a 5-day project.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Custom (SQLite + stdout)</td>
+              <td>$0; unlimited retention</td>
+              <td>Manual — must build</td>
+              <td>Manual</td>
+              <td>Forever</td>
+              <td>N/A</td>
+              <td>Rejected. No grader-visible dashboard; building one costs multiple days; PRD explicitly asks about named vendors.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Langfuse Hobby has 1,000 requests/minute ingestion rate cap. Not a constraint at MVP throughput; would become one at 10K+ attacks/week.</li>
+            <li>No SOC2/BAA on Hobby tier. Acceptable because the platform uses synthetic data only. Known limitation for any production-with-real-PHI deployment — Langfuse Pro ($199/month) offers BAA.</li>
+            <li>LangSmith's first-class LangGraph integration is marginally better than Langfuse's callback handler. Accepted in exchange for unified trace story with target.</li>
+            <li>OpenRouter cost attribution requires one custom function. Not automatic; ~30 minutes of implementation work.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Operational — non-blocking</span>Should W3 platform traces be in the same Langfuse project as the target Co-Pilot traces, or a separate project? Separate project keeps them distinguishable for graders while still showing on the same account dashboard.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §5 (observability)</span>
+            <span class="ref-chip">presearch-ops-research.md §8 (live pricing comparison)</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §9 EVAL APPROACH -->
+  <div class="section" id="s9">
+    <div class="section-header">
+      <span class="sec-num">§9</span>
+      <h2>Eval Approach</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>How will you measure correctness?</li>
+            <li>Ground truth data sources?</li>
+            <li>Automated vs human evaluation?</li>
+            <li>CI integration for eval runs?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — three eval contexts (per ARCHITECTURE.md §3.5 and §11)</h4>
+            <ul>
+              <li><strong>Context A — Adversarial eval (the product):</strong> Continuous attacks against the live target; Judge Agent renders PASS / FAIL / PARTIAL / UNCERTAIN verdict per attack using per-category criteria from <code>evals/criteria/category.yaml</code>. This is the grading artifact.</li>
+              <li><strong>Context B — Platform meta-tests:</strong> Unit tests, smoke tests, schema tests, calibration tests in <code>tests/</code>. Run in CI on every commit. Not adversarial eval — these test the platform logic, not the target.</li>
+              <li><strong>Context C — Grader-facing artifacts:</strong> Filed vulnerability reports, regression cases, coverage report. The deliverable.</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Judge:</strong> LLM-as-Judge with rubric-based criteria for MVP. Ground-truth calibration dataset (human-labeled attack/response/verdict tuples) is Phase 2.</p>
+            <p style="margin-top:8px"><strong>CI integration:</strong> Context B runs in GitLab CI on every commit. Context A (live target + real LLM calls) is NOT run in CI per commit — it costs money and calls a live target. Manual or scheduled daemon runs produce Context A artifacts.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered and Rejected</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Approach</th><th>Signal quality</th><th>Cost</th><th>Consistency</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">LLM-as-Judge (rubric-prompted, frontier model) <span class="tag-selected">Selected</span></td>
+              <td>High — nuanced; catches partial successes; handles paraphrased leakage</td>
+              <td>Mid (one frontier call per attack)</td>
+              <td>Moderate — model can drift; structured output helps</td>
+              <td>Selected. Adversarial success evaluation is inherently a natural-language judgment task. Deterministic heuristics alone miss the tail cases this platform is designed to catch.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Deterministic only (keyword/regex)</td>
+              <td>Low — misses paraphrased leakage; misses context-sensitive partial success</td>
+              <td>Very low</td>
+              <td>Very high</td>
+              <td>Rejected. Cross-patient leakage via paraphrase (the C-7 finding) is precisely the case that breaks regex. The domain requires semantic understanding.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Hybrid (deterministic fast-path + LLM fallback) <span class="tag-deferred">Phase 2</span></td>
+              <td>High — best of both</td>
+              <td>Low-mid</td>
+              <td>High</td>
+              <td>Valid architecture; adds complexity for MVP. Deterministic pre-filter + LLM for ambiguous cases. Phase 2 consideration.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Multi-judge panel <span class="tag-deferred">Phase 2–3</span></td>
+              <td>Highest — disagreement surfaces ambiguity</td>
+              <td>High (N x per-attack cost)</td>
+              <td>Best — majority vote reduces variance</td>
+              <td>Deferred. Single-judge sufficient for MVP given human gate on high/critical reports. ARCHITECTURE.md §9.1 explicitly defers.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Human evaluation only</td>
+              <td>Highest quality</td>
+              <td>Very high; unsustainable at continuous volume</td>
+              <td>High (if consistent raters)</td>
+              <td>Rejected for runtime evaluation. Appropriate for building ground-truth calibration dataset (Phase 2 only).</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>LLM-as-Judge is non-deterministic. Same attack replayed against same target response can theoretically yield different verdicts across runs. Mitigation: pin Judge model version; temperature=0; structured output enforcement.</li>
+            <li>MVP lacks human-labeled ground truth. There is no quantitative accuracy number to cite at architecture defense. Mitigation: explicitly document as Phase 2 work; rubric criteria are the interim quality control.</li>
+            <li>Rubric drift is the Judge's primary failure mode. If criteria YAML gets stale as the target evolves, Judge verdict quality degrades silently. Mitigation: versioned criteria files; criteria updates require PR review.</li>
+            <li>PARTIAL verdict handling is underspecified for regression: PARTIAL triggers mutation, not a filed regression case. This is a design choice some teams implement differently.</li>
+            <li>Context A eval (adversarial) is outside CI. A regression in Red Team mutation logic is not caught until a manual eval run is triggered. Smoke tests (Context B) cover the core loop path with mocked targets as mitigation.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.5 (eval contexts)</span>
+            <span class="ref-chip">ARCHITECTURE.md §11 (eval approach)</span>
+            <span class="ref-chip">ARCHITECTURE.md §9.1 (multi-judge deferral)</span>
+            <span class="ref-chip">presearch-architecture-research.md §9</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §10 VERIFICATION DESIGN -->
+  <div class="section" id="s10">
+    <div class="section-header">
+      <span class="sec-num">§10</span>
+      <h2>Verification Design</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>What claims must be verified?</li>
+            <li>Fact-checking data sources?</li>
+            <li>Confidence thresholds?</li>
+            <li>Escalation triggers?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — three-layer verification (per ARCHITECTURE.md §4)</h4>
+            <ol style="padding-left:18px; font-size:13px; color:#1a2e1a;">
+              <li style="margin-bottom:6px"><strong>Judge evaluates attack success</strong> — primary signal; renders PASS / FAIL / PARTIAL / UNCERTAIN with per-criterion evidence and confidence score</li>
+              <li style="margin-bottom:6px"><strong>Regression harness verifies behavior</strong> — confirms previously-confirmed exploit still fires; distinguishes genuine fix from behavior-changed (per ARCHITECTURE.md §4.3)</li>
+              <li style="margin-bottom:6px"><strong>Human gate on high/critical</strong> — no autonomous filing of high or critical findings (ARCHITECTURE.md §7.2)</li>
+            </ol>
+            <p style="margin-top:8px"><strong>Confidence thresholds:</strong></p>
+            <ul>
+              <li>Judge confidence &ge; 0.85: verdict accepted, auto-file if low/medium severity</li>
+              <li>Judge confidence 0.70–0.85: verdict accepted but flagged for sampling review</li>
+              <li>Judge confidence &lt; 0.70: verdict = UNCERTAIN; escalates to human review queue</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Escalation triggers:</strong></p>
+            <ul>
+              <li>Verdict = UNCERTAIN: human review queue</li>
+              <li>High/critical severity: human review queue regardless of confidence</li>
+              <li>Judge UNCERTAIN rate &gt; 25% in a session: alert — calibration may have drifted</li>
+              <li>Regression test PASS-to-FAIL transition: alert and open-findings bump</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>The Hard Problem — Genuine Fix vs. Behavior Changed</summary>
+        <div class="block-body">
+          <p style="font-size:13px; color:#374151; margin-bottom:12px">PRD p. 4 identifies this as a hard problem: determining whether a fix actually improves the system or simply changes its behavior temporarily. Three approaches evaluated:</p>
+          <table class="alt-table">
+            <tr><th>Approach</th><th>Confidence</th><th>Cost</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Pair verdict with fixed/changed classifier <span class="tag-selected">Selected</span></td>
+              <td>Medium-high — Judge distinguishes "target refuses correctly" from "target says something different that happens not to include PHI"</td>
+              <td>One extra Judge call per regression check</td>
+              <td>Selected. Requires category-specific expected-safe criteria but gives a defensible answer to "was the fix genuine."</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Replay identical attack N=3 times</td>
+              <td>Higher than single replay — 3 consecutive passes builds confidence</td>
+              <td>3x cost; temporal non-stationarity means consecutive passes are not fully independent</td>
+              <td>Phase 2 enhancement for high-value confirmed exploits.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Mechanistic fix verification (human-in-loop)</td>
+              <td>Highest — engineer confirms root cause addressed</td>
+              <td>Requires human; not scalable to continuous operation</td>
+              <td>Reserved for critical-severity findings where root cause matters.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Expected-safe behavior specs are the most important and most underspecified artifact. Category-specific criteria YAML must be precise enough that the Judge can distinguish "target improved" from "target behaved differently." This is documentation work, easy to deprioritize.</li>
+            <li>Confidence thresholds (0.85 / 0.70) are chosen by judgment, not empirical calibration. They will need adjustment once the calibration dataset is built in Phase 2.</li>
+            <li>The platform can only verify behavioral outcomes, not root causes. A fix that produces correct behavior via the wrong mechanism verifies as fixed until a variant is tested.</li>
+            <li>Regression test validity degrades as the target evolves. Stale regression cases produce false alerts. Mitigation: status field on every regression case; human review when active cases have not fired in 30+ days.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Phase 2 — non-blocking for MVP</span>What is the minimum-repro requirement for a regression case? Define minimal repro as the smallest attack sequence that reliably produces the FAIL verdict with no extraneous turns or tokens. Can be automated via binary search on attack sequence length.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §4 (regression harness)</span>
+            <span class="ref-chip">ARCHITECTURE.md §4.3 (fix vs. behavior-changed)</span>
+            <span class="ref-chip">ARCHITECTURE.md §7.2 (human gates)</span>
+            <span class="ref-chip">presearch-architecture-research.md §10</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 3 -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="phase-header">Phase 3 — Post-Stack Refinement (§11–§16)</div>
+
+  <!-- §11 FAILURE MODE ANALYSIS -->
+  <div class="section" id="s11">
+    <div class="section-header">
+      <span class="sec-num">§11</span>
+      <h2>Failure Mode Analysis</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>What happens when tools fail?</li>
+            <li>How to handle ambiguous queries?</li>
+            <li>Rate limiting and fallback strategies?</li>
+            <li>Graceful degradation approach?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — covered in ARCHITECTURE.md §10 (three sub-sections)</h4>
+            <ul>
+              <li><strong>§10.1:</strong> Per-agent failure modes mapped</li>
+              <li><strong>§10.2:</strong> Continuous-mode-specific failure modes (mutation-diversity collapse, cost-spike detection, daemon health checks)</li>
+              <li><strong>§10.3:</strong> The recursion question — who tests the tester</li>
+            </ul>
+          </div>
+          <div class="sub-label">Failure mode coverage map</div>
+          <table class="alt-table">
+            <tr><th>Failure mode</th><th>Architecture coverage</th><th>Gap?</th></tr>
+            <tr><td>Tool fails (external call)</td><td>ARCHITECTURE.md §3.4 and §10 — per-call timeout, retry, circuit breaker</td><td>No gap</td></tr>
+            <tr><td>Ambiguous Judge verdict</td><td>UNCERTAIN verdict path + §10.1 evaluator-collapse row</td><td>No gap</td></tr>
+            <tr><td>Target rate limiting</td><td>§3.4 target unavailable + OpenRouter fallback chain + backoff</td><td>No gap</td></tr>
+            <tr><td>Graceful degradation</td><td>§8.1 soft/hard cost caps + Orchestrator scope reduction</td><td>No gap</td></tr>
+            <tr><td>Red Team harmful content generation</td><td>§2.1 content-class filter (hard categories locked per §12 decision)</td><td>No gap — hard categories now explicit</td></tr>
+            <tr><td>Orchestrator no clear next priority</td><td>§3.6.1 round-robin fallback by stale-since timestamp; halt with <code>coverage-floor-met</code> reason when all categories at floor</td><td>Halt reason now explicit in runbook</td></tr>
+            <tr><td>Cascading failure across agents (Judge times out mid-batch)</td><td>§3.4 individual agent timeout; partial run marked in manifest; daemon continues new run</td><td>Partial — cascade spec now explicit: mark all unverified attacks UNCERTAIN; write partial manifest; start fresh run on resume</td></tr>
+            <tr><td>Mutation diversity collapse</td><td>§10.2 — attack embedding cosine similarity check; Orchestrator early-exit if similarity &gt; 0.95 to prior attacks in category</td><td>No gap</td></tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Partial run recovery on daemon restart starts a new run rather than replaying from where it left off. Simpler to implement; wastes some budget on attacks that were partially evaluated.</li>
+            <li>Observability fatigue in continuous mode is real. A 48-hour daemon produces thousands of PASS verdicts; engineers will stop checking the dashboard. Tiered notification (§10.2) is the design; the digest tooling is not in MVP scope.</li>
+            <li>The suspicion threshold for platform-self-attack detection is policy-only. Red Team output is treated as untrusted at every downstream boundary (§2.1 content filter), but detection of an attack specifically targeting the platform itself relies on content filter + human review, not automated pattern matching.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.4 (per-agent error handling)</span>
+            <span class="ref-chip">ARCHITECTURE.md §10 (failure mode analysis)</span>
+            <span class="ref-chip">ARCHITECTURE.md §10.1 (per-agent failure map)</span>
+            <span class="ref-chip">ARCHITECTURE.md §10.2 (continuous-mode failures)</span>
+            <span class="ref-chip">ARCHITECTURE.md §10.3 (recursion / who tests the tester)</span>
+            <span class="ref-chip">presearch-architecture-research.md §11</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §12 SECURITY CONSIDERATIONS -->
+  <div class="section" id="s12">
+    <div class="section-header">
+      <span class="sec-num">§12</span>
+      <h2>Security Considerations</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>Prompt injection prevention?</li>
+            <li>Data leakage risks?</li>
+            <li>API key management?</li>
+            <li>Audit logging requirements?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — ARCHITECTURE.md §3.3 and §12, THREAT_MODEL.md §2</h4>
+
+            <p><strong>Prompt injection prevention (platform's own LLM calls):</strong></p>
+            <ul>
+              <li>Schema validation (Pydantic v2 / jsonschema) at every inter-agent boundary — target response cannot inject instructions into Judge evaluation prompt because Judge renders verdict as JSON object; if response cannot be parsed into JudgeVerdict schema, it is rejected</li>
+              <li>Judge never sees Red Team hypothesis before rendering verdict — isolation enforced by graph edge typing</li>
+              <li>Content-class filter on Red Team output before it touches the target</li>
+            </ul>
+
+            <p style="margin-top:8px"><strong>Hard content categories Red Team refuses to generate:</strong></p>
+            <ul>
+              <li>Attacks involving minors in clinical / sexual / violent contexts</li>
+              <li>Attacks containing real PHI tokens (real SSNs, real patient names — synthetic IDs are permitted)</li>
+              <li>Attacks targeting systems other than the approved Co-Pilot at <code>142-93-242-40.nip.io</code></li>
+              <li>Attacks synthesizing weaponized real-world malware (working CVE exploits, ransomware code)</li>
+            </ul>
+
+            <p style="margin-top:8px"><strong>Data leakage controls:</strong></p>
+            <ul>
+              <li>PHI scrubber runs on all stored target responses before persisting to disk</li>
+              <li>PHI scrubber runs on Documentation Agent output before vulnerability reports are written</li>
+              <li>Attack payloads use synthetic patient identifiers only; CI checks seed files for real PHI patterns</li>
+              <li>OpenRouter sees attack payload content — mitigated by synthetic-data-only discipline</li>
+            </ul>
+
+            <p style="margin-top:8px"><strong>API key management:</strong></p>
+            <ul>
+              <li><code>COPILOT_HMAC_KEY</code> — environment variable; never in code; rotate when target rotates its key</li>
+              <li><code>OPENROUTER_API_KEY</code> — environment variable; rotate quarterly</li>
+              <li><code>LANGFUSE_SECRET_KEY</code> — environment variable; rotate quarterly</li>
+              <li>Pre-commit hook: detect-secrets or trufflehog scan on every commit</li>
+            </ul>
+
+            <p style="margin-top:8px"><strong>Audit logging:</strong> Every autonomous action logged with agent name, version, full inputs, full outputs, human-approval status, and timestamp to structured JSON files under <code>logs/</code>. Langfuse provides secondary audit trail at the LLM call level (per ARCHITECTURE.md §7.3).</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered — Prompt Injection Defense</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Defense mechanism</th><th>Strength</th><th>Cost</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Structured output enforcement (JudgeVerdict schema) <span class="tag-selected">Selected</span></td>
+              <td>High — free-text instructions in target response cannot change the JSON schema</td>
+              <td>Low — schema validation is deterministic</td>
+              <td>Selected. Primary defense at the Judge boundary.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Response sanitization (pattern matching)</td>
+              <td>Low — advanced injections evade simple patterns</td>
+              <td>Low</td>
+              <td>Not sufficient alone. Pattern matching is brittle to novel injection shapes.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Sandboxed Judge context (process isolation)</td>
+              <td>High — true process isolation</td>
+              <td>High — significant infrastructure complexity</td>
+              <td>Over-engineered for MVP. Target response is already a user-role message in the prompt, not a system-level injection.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>The platform is not air-gapped — calls OpenRouter, Langfuse, and the target API. Mitigated by synthetic-data-only discipline, sentinel-pid boundary on target side, and PHI scrubber. Residual risk: paraphrased PHI could evade the scrubber (the same vulnerability class the platform is designed to detect in the target).</li>
+            <li>PHI scrubber on target responses adds latency. Acceptable at MVP throughput; potential bottleneck at Phase 3 high-volume operation.</li>
+            <li>A crafted target response that is valid JSON matching the JudgeVerdict schema but with manipulated field values is a theoretical second-order attack. Structural defense (schema enforcement) handles instruction injection but not semantically-valid-but-malicious values in verdict fields.</li>
+            <li>Access controls for platform admin functions are policy-only at Phase 1. Who can run this code is OS-level enforcement, not application-level.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Required before Phase 1 live attacks fire</span>Confirm a dedicated test-only OpenEMR account exists with no access to real patient records. The platform needs OpenEMR session credentials (in addition to HMAC) to make valid <code>/chat</code> calls. This account must be scoped to the demo data only.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.3 (inter-agent isolation)</span>
+            <span class="ref-chip">ARCHITECTURE.md §7.3 (audit logging)</span>
+            <span class="ref-chip">ARCHITECTURE.md §12 (security schemas)</span>
+            <span class="ref-chip">THREAT_MODEL.md §2 (platform security posture)</span>
+            <span class="ref-chip">presearch-architecture-research.md §12</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §13 TESTING STRATEGY -->
+  <div class="section" id="s13">
+    <div class="section-header">
+      <span class="sec-num">§13</span>
+      <h2>Testing Strategy</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>Unit tests for tools?</li>
+            <li>Integration tests for agent flows?</li>
+            <li>Adversarial testing approach?</li>
+            <li>Regression testing setup?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — four test classes (per ARCHITECTURE.md §3.5 Context B)</h4>
+            <ul>
+              <li><strong><code>tests/unit/</code></strong> — pytest with mocked LLM responses; covers TargetClient (HMAC, retry, circuit breaker), RegressionStore (YAML CRUD + status transitions), CoverageStateReader, Judge rubric evaluation, Orchestrator selection rules (all 5 priority rules per §3.6.1), schema validation</li>
+              <li><strong><code>tests/smoke/</code></strong> — vertical slice: one full attack cycle (Red Team seed → mocked TargetClient → mocked Judge verdict → mocked Documentation → filesystem persistence); Orchestrator loop smoke (3 iterations, mocked agents); crash recovery test (partial manifest → restart → verify resume)</li>
+              <li><strong><code>tests/schemas/</code></strong> — schema contract tests: generate AttackCandidate → pass to Judge schema validator → generate JudgeVerdict → pass to Documentation schema validator; all schemas validated without LLM calls</li>
+              <li><strong><code>tests/calibration/</code></strong> — Phase 2: Judge calibration against human-labeled ground-truth dataset at <code>evals/calibration/ground-truth.yaml</code></li>
+            </ul>
+            <p style="margin-top:8px"><strong>Adversarial testing of the platform itself (testing the tester — per ARCHITECTURE.md §10.3):</strong></p>
+            <ul>
+              <li>Judge injection meta-test: craft a target response containing an injection attempt; verify JudgeVerdict schema rejects it</li>
+              <li>Judge uniform-verdict collapse meta-test: fixture cases that MUST produce PASS and cases that MUST produce FAIL — run on every regression run</li>
+              <li>Red Team novelty: attack embedding cosine similarity; reject if similarity &gt; 0.95 to any prior attack in same-category corpus</li>
+              <li>Documentation Agent report quality: rubric against PRD required fields (vuln ID, severity, repro, expected/observed, remediation, OWASP, MITRE) — block DRAFT-to-FILED promotion if fields missing</li>
+            </ul>
+            <p style="margin-top:8px"><strong>CI pipeline structure:</strong></p>
+            <ul>
+              <li>Pre-commit: schema tests + unit tests (fast; &lt;30s; no LLM calls)</li>
+              <li>CI on every push (GitLab CI): all unit tests + smoke tests + schema tests (&lt;5 min)</li>
+              <li>Weekly scheduled CI: Judge calibration against ground-truth dataset (Phase 2)</li>
+              <li>NOT in CI per commit: live target calls, real LLM calls, adversarial eval runs (Context A)</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Alternatives Considered and Rejected</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Approach</th><th>Pros</th><th>Cons</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">pytest with mocked LLM responses <span class="tag-selected">Selected</span></td>
+              <td>Fast; deterministic; no API cost; runs in CI without money</td>
+              <td>Mocked responses do not capture model drift</td>
+              <td>Selected. Standard approach; right tradeoff for CI-bound tests.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Full integration with live LLM in CI</td>
+              <td>Tests actual model behavior</td>
+              <td>Expensive; non-deterministic; cannot run on every commit</td>
+              <td>Rejected for per-commit CI. Manual or weekly scheduled run only.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">VCR.py cassette recording</td>
+              <td>Records real LLM calls; replays in tests</td>
+              <td>Cassettes go stale when model behavior changes; adds maintenance burden</td>
+              <td>Rejected. Maintenance overhead not justified for 5-day build.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Mocked LLM responses in unit tests do not capture model drift. If Judge model changes behavior in a new version, unit tests with canned responses will not catch it. Mitigation: weekly calibration tests against ground truth; pin model versions.</li>
+            <li>Ground-truth calibration dataset does not exist at Phase 1 start. The largest testing gap. Interim mitigation: meta-test fixtures (known-pass and known-fail cases); weekly calibration run against those fixtures.</li>
+            <li>Smoke test uses a mocked target — divergence from real target behavior is possible. Smoke tests validate platform logic, not attack quality. Engineers must validate on live target before shipping findings.</li>
+            <li>Testing the tester recursion has a practical stopping point (human review of calibration cases) that is not automated. This is acknowledged as the correct stopping point (ARCHITECTURE.md §10.3).</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Decided — GitLab CI (locked)</span>CI system is GitLab CI only. The platform is a standalone Python application; a new GitLab project in the same namespace runs pytest on every push. GitLab is primary per companion repo's CLAUDE.md rules. GitHub Actions are not the gate for this project.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §3.5 (eval contexts)</span>
+            <span class="ref-chip">ARCHITECTURE.md §10.3 (testing the tester)</span>
+            <span class="ref-chip">presearch-architecture-research.md §13</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §14 OPEN SOURCE PLANNING -->
+  <div class="section" id="s14">
+    <div class="section-header">
+      <span class="sec-num">§14</span>
+      <h2>Open Source Planning</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>What will you release?</li>
+            <li>Licensing considerations?</li>
+            <li>Documentation requirements?</li>
+            <li>Community engagement plan?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision — Apache 2.0 license with RESPONSIBLE_USE.md</h4>
+            <p><strong>License: Apache 2.0.</strong> The platform is standalone — not a fork of OpenEMR. GPL-3.0 from the companion repo does not automatically apply. Apache 2.0 is the correct choice: permissive + explicit patent grant, enterprise-friendly, compatible with LangGraph (which is also Apache 2.0). Adds a <code>RESPONSIBLE_USE.md</code> in the repo root scoping authorized use to systems the operator has explicit written authorization to test.</p>
+            <p style="margin-top:8px"><strong>What is released:</strong></p>
+            <ul>
+              <li>Full platform code (agents, tools, evals harness)</li>
+              <li>Attack seed cases (synthetic data only; no real PHI)</li>
+              <li>Filed vulnerability reports (<code>evals/vulnerabilities/</code>) — grading deliverable; reference MITRE ATLAS public technique IDs so publication is consistent with coordinated disclosure norms</li>
+              <li>Architecture and threat model documentation</li>
+            </ul>
+            <p style="margin-top:8px"><strong>Documentation at repo root (required):</strong> README + ARCHITECTURE + THREAT_MODEL + USERS + SETUP + LICENSE + RESPONSIBLE_USE</p>
+            <p style="margin-top:8px"><strong>Community engagement:</strong> Minimal. This is a 5-day grading project. No commitment to long-term maintenance. README states this explicitly rather than implying ongoing support.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>License Alternatives Considered</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>License</th><th>Permits</th><th>Key constraint</th><th>Fit for this project</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Apache 2.0 <span class="tag-selected">Selected</span></td>
+              <td>Use, modify, redistribute including in proprietary products; patent grant</td>
+              <td>Attribution + state changes</td>
+              <td>Permissive + patent grant + LangGraph-compatible; standalone platform not subject to GPL inheritance</td>
+              <td>Selected.</td>
+            </tr>
+            <tr>
+              <td>MIT</td>
+              <td>Same as Apache 2.0 minus explicit patent grant</td>
+              <td>Attribution only</td>
+              <td>No patent grant; attack techniques could be incorporated into proprietary offensive tools without patent protection</td>
+              <td>Apache 2.0 preferred specifically for patent grant.</td>
+            </tr>
+            <tr>
+              <td>GPL-3.0</td>
+              <td>Must release source if distributed; derivatives must be GPL-3.0</td>
+              <td>Copyleft; distribution triggers requirement</td>
+              <td>Inherited by companion repo from OpenEMR; does not automatically apply to this standalone platform</td>
+              <td>Not required here. If grader expects GPL-3.0 consistency: acceptable alternative.</td>
+            </tr>
+            <tr>
+              <td>AGPL-3.0</td>
+              <td>Same as GPL-3.0 + SaaS loophole closed</td>
+              <td>Strongest copyleft; network use counts as distribution</td>
+              <td>Reduces adoption; overkill for a 5-day grading project</td>
+              <td>Rejected. Wrong tradeoff at this scale.</td>
+            </tr>
+            <tr>
+              <td>Business Source License (BSL)</td>
+              <td>Source available; commercial use restricted for defined period</td>
+              <td>Complex; requires legal drafting</td>
+              <td>No commercial value to protect at grading scale</td>
+              <td>Rejected. Complexity not justified.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Apache 2.0 means someone can incorporate attack techniques into a proprietary offensive tool. RESPONSIBLE_USE.md is a policy control, not a technical one — it can be ignored by a bad actor. The MITRE ATLAS framing means the techniques are already in the public knowledge base, so publication does not create net-new risk.</li>
+            <li>No CVE assignment process. Vulnerability reports use internal VULN-NNN IDs, not CVEs. Appropriate for a 5-day project; known limitation documented.</li>
+            <li>Repo will atrophy post-grading unless Cory actively maintains it. Honest framing: released as open reference implementation, not as a maintained project.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">presearch-ops-research.md §14</span>
+            <span class="ref-chip">THREAT_MODEL.md §2 (MITRE ATLAS anchoring)</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §15 DEPLOYMENT & OPERATIONS -->
+  <div class="section" id="s15">
+    <div class="section-header">
+      <span class="sec-num">§15</span>
+      <h2>Deployment &amp; Operations</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>Hosting approach?</li>
+            <li>CI/CD for agent updates?</li>
+            <li>Monitoring and alerting?</li>
+            <li>Rollback strategy?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <p><strong>Hosting:</strong> <code>systemd</code> service on the same DigitalOcean droplet as the target Co-Pilot (final-submission-day setup, ~1 hour). Local dev iteration on Cory's laptop is the primary development environment; droplet is the demo environment.</p>
+            <p style="margin-top:8px"><strong>Daemon persistence:</strong> <code>Restart=always</code> in the systemd service file. <code>journalctl -f -u clinical-redteam</code> for live log streaming during demo.</p>
+            <p style="margin-top:8px"><strong>CI/CD:</strong> GitLab CI for platform code changes. No automated deploy step for MVP — manual SSH deploy after CI passes. Push to <code>agentforge/w3-*</code> branch triggers: unit tests + smoke test + schema validation.</p>
+            <p style="margin-top:8px"><strong>Monitoring:</strong> Langfuse dashboard for agent traces (open in browser during demo to show live inter-agent traces). <code>journalctl</code> for daemon health. Langfuse trace freshness as health signal (no new spans in N minutes = likely hung).</p>
+            <p style="margin-top:8px"><strong>Rollback:</strong> Platform code: <code>git revert</code> + <code>systemctl restart clinical-redteam</code>. Accumulated artifacts: <code>evals/</code> is git-tracked for regression cases and vuln reports (confirmed exploits promoted only after human review). Raw run output is gitignored. A bad run does not corrupt the regression store.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Hosting Alternatives Considered</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Option</th><th>Cost</th><th>Continuous mode reliability</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Same DigitalOcean droplet as target (systemd) <span class="tag-selected">Selected</span></td>
+              <td>~$0 marginal (already running)</td>
+              <td>HIGH — stays up as long as DigitalOcean stays up</td>
+              <td>Selected. Same network as target (low latency); Cory has existing SSH access; zero incremental infra cost.</td>
+            </tr>
+            <tr>
+              <td>Cory's laptop (local dev only)</td>
+              <td>$0</td>
+              <td>LOW — sleep/lid/reboot kills the daemon; cannot claim "overnight unattended"</td>
+              <td>Dev iteration only. Not acceptable as the final demo environment for continuous-mode claims.</td>
+            </tr>
+            <tr>
+              <td>Separate DigitalOcean droplet</td>
+              <td>~$6–12/month additional</td>
+              <td>HIGH — clean separation; dedicated resources</td>
+              <td>Best for production credibility; extra cost and setup not justified for 5-day project on shared demo infrastructure.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Serverless (Lambda, Cloud Run) <span class="tag-rejected">Rejected</span></td>
+              <td>Pay-per-invocation</td>
+              <td>INCOMPATIBLE — invocation time limits (15 min Lambda, 60 min Cloud Run) are incompatible with a <code>while True:</code> daemon model</td>
+              <td>Architecturally incompatible. Rejected.</td>
+            </tr>
+            <tr>
+              <td>GitHub Actions cron</td>
+              <td>$0 (free minutes)</td>
+              <td>MEDIUM — scheduled runs only; stateless; artifacts don't persist between runs without external storage</td>
+              <td>Valid for scheduled regression sweeps only. Not for continuous discovery mode.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>Running the platform on the same droplet as the target creates an attacker/defender-share-infrastructure optic. In practice, the platform calls the target via HTTP (network boundary preserved); no shared-state attack surface. Documented explicitly to preempt the interview question.</li>
+            <li>No autoscaling — daemon throughput scales with the droplet's clock. Correct for a 5-day project; wrong for a product.</li>
+            <li>No alerting infrastructure beyond Langfuse dashboard and journalctl. Cory must actively check to know if the daemon halted unexpectedly. Known limitation; documented.</li>
+            <li>systemd setup is ~1 hour on submission day. If that hour is not available, screen/tmux is the fallback (fragile to SSH disconnects if not configured correctly).</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Open Questions</summary>
+        <div class="block-body">
+          <ul class="open-q-list">
+            <li><span class="oq-flag">Operational — check before submission day</span>Is the DigitalOcean droplet running the target (142-93-242-40.nip.io) sized to also run the Red Team daemon without resource contention? Check RAM and CPU spec; a 1GB droplet may OOM on very long conversation histories accumulating in LangGraph state.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md (exec summary — daemon model)</span>
+            <span class="ref-chip">presearch-ops-research.md §15</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+  <!-- §16 ITERATION PLANNING -->
+  <div class="section" id="s16">
+    <div class="section-header">
+      <span class="sec-num">§16</span>
+      <h2>Iteration Planning</h2>
+      <span class="badge badge-decided">&#10003; Decided</span>
+    </div>
+    <div class="section-body">
+
+      <details class="block" open>
+        <summary>Questions from Presearch.pdf</summary>
+        <div class="block-body">
+          <ul class="questions-list">
+            <li>How will you collect user feedback?</li>
+            <li>Eval-driven improvement cycle?</li>
+            <li>Feature prioritization approach?</li>
+            <li>Long-term maintenance plan?</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block" open>
+        <summary>Our Decision</summary>
+        <div class="block-body">
+          <div class="decision-panel">
+            <h4>Decision</h4>
+            <p><strong>Feedback collection (MVP):</strong> Vuln report status field edited manually in YAML frontmatter. Engineer reviews <code>VULN-NNN-DRAFT.md</code>; sets <code>status: false-positive</code> or <code>status: filed</code>. Orchestrator reads this on next loop and skips the finding's associated attack pattern. Git history is the audit trail. Phase 3 upgrade path: Langfuse annotation queue (Core tier, $29/month) for in-UI feedback.</p>
+            <p style="margin-top:8px"><strong>Eval-driven improvement cycle:</strong> Per-rubric pass-rate tracking. Judge calibration drift alert: if rolling-window accuracy drops &gt;5pp from baseline, emit alert and set <code>judge_needs_review = True</code>. Drift detection is Phase 2 (requires ground-truth dataset at <code>evals/calibration/ground-truth.yaml</code>).</p>
+            <p style="margin-top:8px"><strong>Feature prioritization post-MVP (in priority order — per ARCHITECTURE.md §9.4):</strong></p>
+            <ol style="padding-left:18px; font-size:13px; color:#1a2e1a;">
+              <li>Judge calibration drift detection and ground-truth set expansion</li>
+              <li>Multi-turn attack sequence support (Phase 2)</li>
+              <li>Orchestrator autonomous category discovery (LLM-augmented)</li>
+              <li>Exploit chaining (compound attacks)</li>
+              <li>Distributed Red Team workers (Redis + Celery) for 10K+ scale</li>
+              <li>RL-based mutation prioritization</li>
+            </ol>
+            <p style="margin-top:8px"><strong>Long-term maintenance (honest framing):</strong> This is a 5-day grading project. Long-term maintenance is not planned. README states this explicitly. The lasting output is the vulnerability reports (VULN-001 documenting C-7 becomes a real finding in the companion repo's AUDIT.md). If further development occurs, the natural extension is generalizing the TargetClient to accept arbitrary HMAC-signed LLM endpoints.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Feedback Mechanism Alternatives</summary>
+        <div class="block-body">
+          <table class="alt-table">
+            <tr><th>Mechanism</th><th>Complexity</th><th>Audit trail</th><th>Verdict</th></tr>
+            <tr>
+              <td class="alt-selected">Manual YAML frontmatter edit <span class="tag-selected">Selected (MVP)</span></td>
+              <td>Zero tooling overhead</td>
+              <td>Git history</td>
+              <td>Selected for MVP. Sufficient for single-operator project.</td>
+            </tr>
+            <tr>
+              <td>CLI flag (<code>--mark-false-positive VULN-NNN</code>)</td>
+              <td>Low</td>
+              <td>Audit log + git</td>
+              <td>Marginally more ergonomic. Implement if YAML editing proves cumbersome in practice.</td>
+            </tr>
+            <tr>
+              <td class="alt-rejected">Langfuse annotation queue <span class="tag-deferred">Phase 3</span></td>
+              <td>Medium — requires Core tier ($29/month) and annotation queue setup</td>
+              <td>Langfuse audit trail + git</td>
+              <td>The PRD's intended design (observability layer as data substrate both humans and Orchestrator read). Phase 3 upgrade when team size or volume justifies it.</td>
+            </tr>
+          </table>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>Tradeoffs We Own</summary>
+        <div class="block-body">
+          <ul class="tradeoffs-list">
+            <li>YAML frontmatter as feedback mechanism has no UI — engineers edit files directly. Acceptable for a single-operator project; unacceptable for a team.</li>
+            <li>The ground-truth calibration set will be small (10–20 tuples) at Phase 2 start. Drift detection on a small set is noisy. Documented: "calibration is bootstrapped; drift detection becomes reliable at 50+ tuples."</li>
+            <li>Feature prioritization list above is aspirational — none of it will be built in the 5-day window. Framed clearly as "known improvement priorities, not committed roadmap."</li>
+            <li>Honest "no long-term maintenance" framing may appear as a weakness. It is actually stronger than aspirational "we will maintain this as open source" claims that graders know are usually false for 5-day projects.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="block">
+        <summary>References</summary>
+        <div class="block-body">
+          <div class="ref-list">
+            <span class="ref-chip">ARCHITECTURE.md §9.4 (MVP scope + post-MVP priorities)</span>
+            <span class="ref-chip">ARCHITECTURE.md §2.2 (Judge calibration design)</span>
+            <span class="ref-chip">presearch-ops-research.md §16</span>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+</div><!-- end .page -->
+</body>
+</html>

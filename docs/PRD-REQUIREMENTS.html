@@ -1,0 +1,2022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>W3 Clinical Red Team Platform — PRD Requirements Checklist</title>
+<style>
+  /* === RESET & BASE === */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #1a1a2e;
+    background: #f8f9fa;
+  }
+  a { color: #1a56db; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* === TOP NAV === */
+  #topnav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: #1a1a2e;
+    color: #e8eaf6;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    border-bottom: 3px solid #e53e3e;
+    min-height: 44px;
+  }
+  #topnav a {
+    color: #a5b4fc;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  #topnav a:hover { background: #312e81; color: #fff; text-decoration: none; }
+  #topnav .nav-sep { color: #4b5563; }
+  #topnav .nav-title { font-weight: 700; font-size: 13px; color: #fff; margin-right: 8px; flex-shrink: 0; }
+
+  /* === LAYOUT === */
+  .page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  /* === HEADER === */
+  .page-header {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .page-header h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 4px; }
+  .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+  .page-header .meta span { margin-right: 16px; }
+
+  /* === SUMMARY GRID === */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .summary-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .summary-card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 8px; }
+  .summary-card .count { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+  .summary-card .detail { font-size: 12px; color: #4b5563; margin-top: 4px; }
+  .hard-gate-card {
+    border-color: #e53e3e;
+    background: #fff5f5;
+  }
+  .hard-gate-card .count { color: #c53030; }
+  .hard-gate-card h3 { color: #c53030; }
+
+  /* === SCHEDULE TABLE === */
+  .schedule-section {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .schedule-section h2 { font-size: 16px; margin-bottom: 12px; color: #1a1a2e; }
+  table.schedule { width: 100%; border-collapse: collapse; }
+  table.schedule th {
+    background: #f1f5f9;
+    color: #374151;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+  }
+  table.schedule td {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    font-size: 13px;
+  }
+  table.schedule tr:nth-child(even) td { background: #f8fafc; }
+  .deadline-passed { color: #9ca3af; }
+  .deadline-mvp { color: #b45309; font-weight: 600; }
+  .deadline-final { color: #c53030; font-weight: 600; }
+
+  /* === SECTION WRAPPERS === */
+  .section {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-header h2 { font-size: 17px; color: #1a1a2e; flex: 1; }
+  .section-body { padding: 0; }
+
+  /* === HARD GATES SECTION === */
+  .hardgate-section {
+    background: #fff5f5;
+    border: 2px solid #e53e3e;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .hardgate-section .section-header {
+    background: #e53e3e;
+    border-bottom: 2px solid #c53030;
+  }
+  .hardgate-section .section-header h2 { color: #fff; font-size: 18px; }
+  .hardgate-section .section-header .hg-warning {
+    background: #fff;
+    color: #c53030;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  /* === HARD GATE ITEM === */
+  .hg-item {
+    border-bottom: 1px solid #fed7d7;
+    padding: 14px 20px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 12px;
+    align-items: start;
+  }
+  .hg-item:last-child { border-bottom: none; }
+  .hg-item:hover { background: #fff0f0; }
+  .hg-item input[type=checkbox] { margin-top: 2px; width: 16px; height: 16px; accent-color: #c53030; flex-shrink: 0; }
+  .hg-item .hg-content h3 { font-size: 14px; font-weight: 600; color: #742a2a; margin-bottom: 4px; }
+  .hg-item .hg-content .hg-text { font-size: 13px; color: #1a1a2e; margin-bottom: 6px; }
+  .hg-item .hg-content .hg-meta { font-size: 11px; color: #9b2c2c; }
+  .hg-item .hg-status { flex-shrink: 0; }
+
+  /* === COLLAPSIBLE SUB-SECTIONS === */
+  details.sub { border-bottom: 1px solid #e2e8f0; }
+  details.sub:last-child { border-bottom: none; }
+  details.sub > summary {
+    cursor: pointer;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    background: #f8fafc;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  details.sub > summary::before { content: "▶"; font-size: 10px; color: #9ca3af; transition: transform .15s; }
+  details.sub[open] > summary::before { transform: rotate(90deg); }
+  details.sub > summary:hover { background: #f1f5f9; }
+  details.sub > summary .sub-count { margin-left: auto; font-size: 11px; font-weight: 400; color: #6b7280; }
+
+  /* === REQUIREMENT TABLE === */
+  table.req-table { width: 100%; border-collapse: collapse; }
+  table.req-table th {
+    background: #f1f5f9;
+    color: #374151;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 44px;
+  }
+  table.req-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 13px;
+    vertical-align: top;
+  }
+  table.req-table tr:last-child td { border-bottom: none; }
+  table.req-table tr:nth-child(even) td { background: #fafbfc; }
+  table.req-table tr:hover td { background: #f0f7ff; }
+  table.req-table td.cb { width: 28px; padding-right: 4px; }
+  table.req-table td.text { min-width: 260px; color: #1a1a2e; }
+  table.req-table td.loc { width: 110px; color: #64748b; font-size: 11px; }
+  table.req-table td.cat { width: 110px; }
+  table.req-table td.timing { width: 90px; }
+  table.req-table td.status { width: 90px; }
+  table.req-table .sub-item { color: #374151; font-size: 12px; }
+  table.req-table .sub-item td.text { padding-left: 28px; color: #374151; }
+
+  /* === BADGES === */
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .badge-hardgate { background: #fed7d7; color: #c53030; }
+  .badge-table { background: #e0e7ff; color: #3730a3; }
+  .badge-reqword { background: #d1fae5; color: #065f46; }
+  .badge-body { background: #fef3c7; color: #92400e; }
+  .badge-other { background: #f3f4f6; color: #374151; }
+  .badge-negative { background: #fce7f3; color: #9d174d; }
+
+  .badge-mvp { background: #fef3c7; color: #92400e; }
+  .badge-final { background: #fee2e2; color: #991b1b; }
+  .badge-both { background: #e0f2fe; color: #0369a1; }
+  .badge-defense { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+
+  .badge-done { background: #d1fae5; color: #065f46; }
+  .badge-progress { background: #fef3c7; color: #92400e; }
+  .badge-notstarted { background: #f3f4f6; color: #6b7280; }
+
+  /* === APPENDIX === */
+  .appendix-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; padding: 16px; }
+  .page-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 16px; }
+  .page-card h4 { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+  .page-card p { font-size: 12px; color: #4b5563; }
+
+  /* === IMPLICIT / NEGATIVE === */
+  .negative-section .section-header { background: #fdf4ff; border-bottom-color: #e9d5ff; }
+  .negative-section .section-header h2 { color: #6b21a8; }
+  .neg-item { padding: 10px 20px; border-bottom: 1px solid #f3e8ff; display: grid; grid-template-columns: auto 1fr; gap: 12px; }
+  .neg-item:last-child { border-bottom: none; }
+  .neg-item:hover { background: #faf5ff; }
+  .neg-item input[type=checkbox] { margin-top: 2px; width: 16px; height: 16px; accent-color: #7c3aed; }
+  .neg-item .neg-content .neg-text { font-size: 13px; color: #1a1a2e; margin-bottom: 4px; }
+  .neg-item .neg-content .neg-meta { font-size: 11px; color: #7c3aed; }
+
+  /* === PRE-SEARCH APPENDIX === */
+  .presearch-grid { padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .presearch-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 16px; }
+  .presearch-card h4 { font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .presearch-card ul { padding-left: 16px; }
+  .presearch-card li { font-size: 12px; color: #4b5563; margin-bottom: 3px; }
+
+  /* === PRINT === */
+  @media print {
+    #topnav { display: none; }
+    #action-bar { display: none; }
+    .page { padding: 0; max-width: 100%; }
+    details.sub { page-break-inside: avoid; }
+    .hg-item { page-break-inside: avoid; }
+    body { font-size: 12px; }
+    .summary-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  /* === ACTION BAR === */
+  #action-bar {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+  }
+  #action-bar .ab-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  #action-bar .ab-progress-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a2e;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #action-bar .ab-save-indicator {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-left: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #progress-bar-track {
+    flex: 1;
+    min-width: 120px;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #059669);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+  #action-bar .ab-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  #action-bar .ab-btn {
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid #d1d5db;
+    background: #f9fafb;
+    color: #374151;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  #action-bar .ab-btn:hover { background: #f1f5f9; border-color: #9ca3af; }
+  #action-bar .ab-btn.ab-danger { border-color: #fca5a5; color: #b91c1c; }
+  #action-bar .ab-btn.ab-danger:hover { background: #fef2f2; border-color: #f87171; }
+  #action-bar .ab-sep { color: #d1d5db; font-size: 14px; }
+  .filter-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid #d1d5db;
+    background: #f3f4f6;
+    color: #6b7280;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 500;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .filter-btn:hover { background: #e5e7eb; border-color: #9ca3af; color: #374151; }
+  .filter-btn.active {
+    background: #1a1a2e;
+    border-color: #1a1a2e;
+    color: #fff;
+  }
+
+  /* === CLICKABLE STATUS BADGES === */
+  .status-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity 0.15s, box-shadow 0.15s;
+    position: relative;
+  }
+  .status-btn:hover { opacity: 0.85; box-shadow: 0 0 0 2px rgba(0,0,0,0.12); }
+  .status-btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+  .status-btn[data-status="not-started"] { background: #f3f4f6; color: #6b7280; }
+  .status-btn[data-status="in-progress"] { background: #fef3c7; color: #92400e; }
+  .status-btn[data-status="done"] { background: #d1fae5; color: #065f46; }
+  .status-btn.flash { animation: badge-flash 0.2s ease; }
+  @keyframes badge-flash {
+    0%   { opacity: 1; }
+    40%  { opacity: 0.35; }
+    100% { opacity: 1; }
+  }
+
+  /* === FILTER VISIBILITY === */
+  .req-row-hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ===== STICKY TOP NAV ===== -->
+<nav id="topnav">
+  <span class="nav-title">W3 PRD Checklist</span>
+  <span class="nav-sep">|</span>
+  <a href="#hard-gates">Hard Gates</a>
+  <a href="#schedule">Schedule</a>
+  <a href="#mvp">MVP Requirements</a>
+  <a href="#final">Final Requirements</a>
+  <a href="#both">Both / Continuous</a>
+  <a href="#implicit">Implicit / Negative</a>
+  <a href="#presearch">Pre-Search</a>
+  <a href="#appendix">Page Appendix</a>
+</nav>
+
+<div class="page">
+
+<!-- ===== PAGE HEADER ===== -->
+<div class="page-header">
+  <h1>GauntletAI W3 — Adversarial AI Security Platform<br>PRD Requirements Checklist</h1>
+  <div class="meta">
+    <span><strong>Generated:</strong> 2026-05-11</span>
+    <span><strong>PRD:</strong> "Week 3 - AgentForge - Adversarial AI Security Platform PRD.pdf" (15 pages)</span>
+    <span><strong>Source:</strong> <code>C:/Dev/GauntletAI/ClinicalRedTeam/docs/research/prd/Week 3 - AgentForge - Adversarial AI Security Platform PRD.pdf</code></span>
+    <span><strong>Repo:</strong> <code>C:/Dev/GauntletAI/ClinicalRedTeam/</code></span>
+  </div>
+  <div class="meta" style="margin-top:8px; color:#374151; font-weight:600;">
+    Status key: &#9744; not-started &nbsp;|&nbsp; &#9203; in-progress &nbsp;|&nbsp; &#10003; done &nbsp;&nbsp;
+    Status is conservative — "in-progress" means a file exists in the repo; "done" requires verified complete content.
+  </div>
+</div>
+
+<!-- ===== SUMMARY GRID ===== -->
+<div class="summary-grid">
+  <div class="summary-card hard-gate-card">
+    <h3>Hard Gates Remaining</h3>
+    <div class="count">5</div>
+    <div class="detail">out of 5 total hard gates</div>
+  </div>
+  <div class="summary-card">
+    <h3>Total Requirements</h3>
+    <div class="count">73</div>
+    <div class="detail">across all 5 categories</div>
+  </div>
+  <div class="summary-card">
+    <h3>By Checkpoint</h3>
+    <div class="detail" style="margin-top:4px; font-size:13px;">
+      <div>MVP (Tue 11:59 PM): <strong>31</strong></div>
+      <div>Final (Fri Noon): <strong>24</strong></div>
+      <div>Both / Continuous: <strong>10</strong></div>
+      <div>Architecture Defense: <strong>&#10003; done</strong> (peer-cohort 5-min talk completed Sun)</div>
+    </div>
+  </div>
+  <div class="summary-card">
+    <h3>By Category</h3>
+    <div class="detail" style="margin-top:4px; font-size:13px;">
+      <div>Hard Gate: <strong>5</strong></div>
+      <div>Table (formal deliverable): <strong>16</strong></div>
+      <div>Requirement-word: <strong>18</strong></div>
+      <div>Body-text "must": <strong>24</strong></div>
+      <div>Other mandatory: <strong>10</strong></div>
+    </div>
+  </div>
+  <div class="summary-card">
+    <h3>By Status</h3>
+    <div class="detail" style="margin-top:4px; font-size:13px;">
+      <div>&#9744; Not started: <strong>49</strong></div>
+      <div>&#9203; In progress: <strong>24</strong></div>
+      <div>&#10003; Done: <strong>0</strong></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ACTION BAR ===== -->
+<div id="action-bar">
+  <div class="ab-top">
+    <span class="ab-progress-label" id="ab-progress-label">Loading...</span>
+    <div id="progress-bar-track"><div id="progress-bar-fill"></div></div>
+    <span class="ab-save-indicator" id="ab-save-indicator"></span>
+  </div>
+  <div class="ab-actions">
+    <button class="filter-btn active" data-filter="all" id="filter-all">All</button>
+    <button class="filter-btn" data-filter="not-started" id="filter-not-started">Not Started</button>
+    <button class="filter-btn" data-filter="in-progress" id="filter-in-progress">In Progress</button>
+    <button class="filter-btn" data-filter="done" id="filter-done">Done</button>
+    <button class="filter-btn" data-filter="hard-gates" id="filter-hard-gates">Hard Gates Only</button>
+    <button class="filter-btn" data-filter="mvp" id="filter-mvp">MVP Only</button>
+    <button class="filter-btn" data-filter="final" id="filter-final">Final Only</button>
+    <span class="ab-sep">|</span>
+    <button class="ab-btn" id="btn-export-json">Export JSON</button>
+    <button class="ab-btn ab-danger" id="btn-reset-all">Reset All</button>
+  </div>
+</div>
+
+<!-- ===== SCHEDULE REFERENCE ===== -->
+<div class="schedule-section" id="schedule">
+  <h2>Project Schedule (PRD p. 6)</h2>
+  <table class="schedule">
+    <thead>
+      <tr>
+        <th>Checkpoint</th>
+        <th>Deadline</th>
+        <th>Key Deliverables</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Architecture Defense</strong></td>
+        <td class="deadline-passed">Sun 2026-05-11 (5-min cohort peer talk + Q&amp;A)</td>
+        <td>One-line calendar event — DONE. Not a separate deliverable; the underlying ARCHITECTURE.md sub-requirements live under HG-4 in the Hard Gates section.</td>
+        <td><span class="badge badge-done">&#10003; done</span></td>
+      </tr>
+      <tr>
+        <td><strong>MVP</strong></td>
+        <td class="deadline-mvp">Tuesday @ 11:59 PM</td>
+        <td>Stages 1–4: target running, threat model, attack suite (evals/), architecture doc, one live agent role</td>
+        <td><span class="badge badge-notstarted">&#9744; not-started</span></td>
+      </tr>
+      <tr>
+        <td><strong>Final</strong></td>
+        <td class="deadline-final">Friday @ Noon</td>
+        <td>Full platform, all deliverables, demo video, social post, vulnerability reports, cost analysis</td>
+        <td><span class="badge badge-notstarted">&#9744; not-started</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== HARD GATES ===== -->
+<div class="hardgate-section" id="hard-gates">
+  <div class="section-header">
+    <h2>HARD GATES &amp; ARCHITECTURE REQUIREMENTS</h2>
+    <span class="hg-warning">Failure on any of these = fail grading</span>
+  </div>
+
+  <!-- HG1 -->
+  <div class="hg-item">
+    <input type="checkbox" id="hg1">
+    <div class="hg-content">
+      <h3>HG-1 — Deployed Target URL with every checkpoint (Stage 1)</h3>
+      <div class="hg-text">Your deployed target application URL must be submitted with every checkpoint. The adversarial platform must be running tests against a live system, not just a mock.</div>
+      <div class="hg-meta">PRD p. 7 | Stage 1 "Stand Up the Target" | Applies: MVP &amp; Final (both checkpoints)</div>
+    </div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">URL exists (142-93-242-40.nip.io); must be live + tested at submission</span></div>
+  </div>
+
+  <!-- HG2 -->
+  <div class="hg-item">
+    <input type="checkbox" id="hg2">
+    <div class="hg-content">
+      <h3>HG-2 — THREAT_MODEL.md with ~500 word summary (Stage 2)</h3>
+      <div class="hg-text">A markdown document (./THREAT_MODEL.md) with your full attack surface map. The document must begin with a ~500 word summary of your key findings, the highest-risk attack categories, and how your platform will prioritize coverage.</div>
+      <div class="hg-meta">PRD p. 7 | Stage 2 "Map the Attack Surface" | Applies: MVP</div>
+    </div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File exists — verify summary is ~500w and all 6 attack categories mapped</span></div>
+  </div>
+
+  <!-- HG3 -->
+  <div class="hg-item">
+    <input type="checkbox" id="hg3">
+    <div class="hg-content">
+      <h3>HG-3 — Working evals/ suite (3+ attack categories) + one live agent role (Stage 3)</h3>
+      <div class="hg-text">A working test suite (./evals/) with results from at least three distinct attack categories, plus a working prototype of at least one agent role (Red Team, Judge, or Orchestrator) running live against the deployed target.</div>
+      <div class="hg-meta">PRD p. 8 | Stage 3 "Build Initial Attack Suite" | Applies: MVP</div>
+    </div>
+    <div class="hg-status"><span class="badge badge-notstarted">&#9744; not-started</span><br><span style="font-size:11px; color:#9b2c2c;">evals/ directory is empty — highest priority build item</span></div>
+  </div>
+
+  <!-- HG4 -->
+  <div class="hg-item">
+    <input type="checkbox" id="hg4">
+    <div class="hg-content">
+      <h3>HG-4 — ARCHITECTURE.md with ~500 word summary and all agent definitions (Stage 4)</h3>
+      <div class="hg-text">A markdown document (./ARCHITECTURE.md) defining your multi-agent platform architecture. The document must begin with a ~500 word summary and must explicitly name each agent, its role, and how it fits into the overall system. A diagram of agent interactions is strongly recommended.</div>
+      <div class="hg-meta">PRD p. 8 | Stage 4 "Plan the Platform Architecture" | Applies: MVP</div>
+    </div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">File exists — verify diagram is present or noted as recommended</span></div>
+  </div>
+
+  <!-- HG5 / ARCH REQ -->
+  <div class="hg-item">
+    <input type="checkbox" id="hg5">
+    <div class="hg-content">
+      <h3>HG-5 — ARCHITECTURE REQUIREMENT: True multi-agent system (not single-agent or pipeline)</h3>
+      <div class="hg-text">A single-agent or pipeline architecture does not satisfy this assignment. Each role below represents a distinct agent with its own responsibilities, context, and decision-making authority. Your ARCHITECTURE.md must define each agent, its inputs and outputs, its trust level, and how it coordinates with the others.</div>
+      <div class="hg-meta">PRD p. 9 | "Platform Requirements" / "Architecture Requirement" callout | Applies: Both (graded at every checkpoint)</div>
+    </div>
+    <div class="hg-status"><span class="badge badge-progress">&#9203; in-progress</span><br><span style="font-size:11px; color:#9b2c2c;">Architecture doc names 4 agents — must verify each has distinct context + trust level documented</span></div>
+  </div>
+</div>
+
+<!-- ===== MVP REQUIREMENTS ===== -->
+<div class="section" id="mvp">
+  <div class="section-header">
+    <h2>MVP Requirements — Tuesday 11:59 PM</h2>
+    <span class="badge badge-mvp">MVP</span>
+  </div>
+  <div class="section-body">
+
+    <!-- Stage 1 -->
+    <details class="sub">
+      <summary>Stage 1 — Stand Up the Target <span class="sub-count">4 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Clinical Co-Pilot from Weeks 1 and 2 must be running locally and deployed, ready to be tested</td>
+            <td class="loc">p. 6–7 §Stage 1</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Document any changes made to bring the system into a testable state — this becomes part of README and threat model context</td>
+            <td class="loc">p. 6 §Stage 1</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Deployed target application URL must be submitted with the MVP checkpoint (see HG-1)</td>
+            <td class="loc">p. 7 §Stage 1</td>
+            <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Adversarial platform must be running tests against the live system (not a mock) at MVP checkpoint</td>
+            <td class="loc">p. 7 §Stage 1</td>
+            <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+    <!-- Stage 2 -->
+    <details class="sub">
+      <summary>Stage 2 — Map the Attack Surface (Threat Model) <span class="sub-count">9 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Produce a structured threat model covering the full attack surface of the Clinical Co-Pilot (HARD GATE: ./THREAT_MODEL.md)</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat model must cover: Prompt injection vectors — direct, indirect, and multi-turn</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat model must cover: Data exfiltration paths — PHI leakage, cross-patient data exposure, authorization bypass</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat model must cover: State corruption attacks — conversation history manipulation, context poisoning</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat model must cover: Tool misuse — unintended tool invocation, parameter tampering, recursive tool calls</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat model must cover: Denial of service patterns — token exhaustion, infinite loops, cost amplification</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat model must cover: Identity and role exploitation — privilege escalation, persona hijacking, trust boundary violations</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">For each attack category, identify: the attack surface, the potential impact, the difficulty of exploitation, and whether existing defenses address it</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">THREAT_MODEL.md must begin with a ~500 word summary of key findings, highest-risk attack categories, and how the platform will prioritize coverage</td>
+            <td class="loc">p. 7 §Stage 2</td>
+            <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+    <!-- Stage 3 -->
+    <details class="sub">
+      <summary>Stage 3 — Build Initial Attack Suite (evals/) <span class="sub-count">10 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Working test suite (./evals/) with results from at least three distinct attack categories (HARD GATE)</td>
+            <td class="loc">p. 8 §Stage 3</td>
+            <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Working prototype of at least one agent role (Red Team, Judge, or Orchestrator) running live against the deployed target (HARD GATE)</td>
+            <td class="loc">p. 8 §Stage 3</td>
+            <td class="cat"><span class="badge badge-hardgate">Hard Gate</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Test cases must be structured, reproducible, and extensible (not just static payloads — they are seeds the Red Team Agent will learn from)</td>
+            <td class="loc">p. 8 §Stage 3</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each test case must include: Attack category and subcategory</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each test case must include: The specific prompt or input sequence</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each test case must include: The expected safe behavior</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each test case must include: The observed behavior (pass/fail/partial)</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each test case must include: Severity rating and exploitability assessment</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each test case must include: Whether the case should be added to the regression suite</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Attack cases must exercise the highest-priority attack categories from the threat model</td>
+            <td class="loc">p. 7 §Stage 3</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+  </div>
+</div>
+
+<!-- ===== FINAL REQUIREMENTS ===== -->
+<div class="section" id="final">
+  <div class="section-header">
+    <h2>Final Submission Requirements — Friday Noon</h2>
+    <span class="badge badge-final">Final</span>
+  </div>
+  <div class="section-body">
+
+    <!-- Formal submission table deliverables -->
+    <details class="sub" open>
+      <summary>Formal Submission Table Deliverables (PRD p. 11–12) <span class="sub-count">8 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">GitHub Repository: Forked from OpenEMR. Includes setup guide, architecture overview, deployed link, and instructions for running the adversarial platform against the live target.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Threat Model (./THREAT_MODEL.md): Full attack surface map with a ~500 word summary of key findings and highest-risk categories. (Also MVP HARD GATE — must be final-quality by Final.)</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">User Doc (./USERS.md): The users the platform addresses, their workflows, and specific use cases with explicit justification for why automation is the right solution.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Architecture Doc (./ARCHITECTURE.md): Multi-agent platform architecture with technical details including each agent role, inter-agent communication design, orchestration strategy, regression harness, observability layer, and known tradeoffs. Must begin with ~500 word summary. Must include a diagram of agent interactions.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Demo Video (3–5 min): One demo video per submission showcasing the work completed, highlighting key decisions, and demonstrating the platform running live attacks against the target system.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Eval Dataset (./evals/): Adversarial test suite with results across at least three attack categories. Structure and scope are design decisions; results must be reproducible.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Vulnerability Reports: Professional documentation for each discovered vulnerability following the required format. Minimum of three distinct vulnerability reports.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">AI Cost Analysis: Actual dev spend and projected production costs for running the adversarial platform at 100 / 1K / 10K / 100K test runs. Consider architectural changes needed at each scale. This is not simply cost-per-token * n runs.</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+    <!-- Vulnerability report format requirements -->
+    <details class="sub">
+      <summary>Vulnerability Report Format Requirements (per report — min 3 reports required) <span class="sub-count">7 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each vulnerability report must include: A unique identifier and severity rating</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each vulnerability report must include: A clear description of the vulnerability and its clinical impact</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each vulnerability report must include: A minimal, reproducible attack sequence</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each vulnerability report must include: The observed versus expected behavior</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each vulnerability report must include: Recommended remediation approach</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each vulnerability report must include: Current status and fix validation results</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Each report must be reproducible, actionable, and usable by an engineer who was not present when the exploit was found (quality bar: a senior security engineer could reproduce, validate, and fix the vulnerability based solely on what the agent writes)</td>
+            <td class="loc">p. 10 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-other">Other</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+    <!-- Platform component requirements -->
+    <details class="sub">
+      <summary>Full Platform Component Requirements <span class="sub-count">9 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Regression &amp; Validation Harness must store confirmed exploits in a versioned, queryable format</td>
+            <td class="loc">p. 10 §Regression</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Regression &amp; Validation Harness must run the full regression suite automatically when triggered by the Orchestrator</td>
+            <td class="loc">p. 10 §Regression</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Regression &amp; Validation Harness must detect when a previously-fixed vulnerability has reappeared</td>
+            <td class="loc">p. 10 §Regression</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Regression &amp; Validation Harness must flag when fixing one attack introduces a regression in another category</td>
+            <td class="loc">p. 10 §Regression</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Documentation Agent must convert confirmed exploits from the Judge Agent into structured, professional vulnerability reports without requiring a human to write them</td>
+            <td class="loc">p. 9 §Doc Agent</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Architecture must address how the platform handles cost, rate limits, and model constraints at scale</td>
+            <td class="loc">p. 8 §Stage 4</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Architecture must address what framework or infrastructure manages agent state and coordination</td>
+            <td class="loc">p. 8 §Stage 4</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Social Post (Final only): Share on X or LinkedIn — describe the project, show the platform in action, tag @GauntletAI</td>
+            <td class="loc">p. 12 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Deployed Application must be publicly accessible; adversarial platform must be running live tests against the deployed target at Final submission</td>
+            <td class="loc">p. 11 Table</td>
+            <td class="cat"><span class="badge badge-table">Table</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+  </div>
+</div>
+
+<!-- ===== BOTH / CONTINUOUS ===== -->
+<div class="section" id="both">
+  <div class="section-header">
+    <h2>Both / Continuous Requirements (apply at every checkpoint)</h2>
+    <span class="badge badge-both">Both</span>
+  </div>
+  <div class="section-body">
+    <details class="sub" open>
+      <summary>Multi-Agent System Capabilities (must collectively be capable of) <span class="sub-count">7 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Generating novel adversarial inputs</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Mutating partially-successful attacks to probe for bypasses</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Targeting multi-turn attack sequences, not just single-prompt injections</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Evaluating whether an attack succeeded, with consistent criteria across runs and system versions</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Prioritizing which attack surfaces to explore next based on coverage gaps and unresolved findings</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Halting or redirecting when cost is accumulating without producing signal</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must collectively be capable of: Triggering regression runs when the target system changes</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+    <details class="sub">
+      <summary>Observability Layer — must be able to answer at all times <span class="sub-count">6 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Platform must surface: Which attack categories have been tested, and how many cases exist per category</td>
+            <td class="loc">p. 10 §Observability</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Platform must surface: What is the current pass/fail rate across all test categories and system versions</td>
+            <td class="loc">p. 10 §Observability</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Platform must surface: Is the target system becoming more or less resilient over time</td>
+            <td class="loc">p. 10 §Observability</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Platform must surface: Which vulnerabilities are open, in progress, or resolved</td>
+            <td class="loc">p. 10 §Observability</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Platform must surface: How much did this test run cost, and at what rate is cost scaling</td>
+            <td class="loc">p. 10 §Observability</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Platform must surface: What is each agent doing, and in what order did it happen (agent action audit log)</td>
+            <td class="loc">p. 10 §Observability</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+    <details class="sub">
+      <summary>Judge Agent Independence &amp; Evaluation Requirements <span class="sub-count">3 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Judge Agent must be independent of the attack engine — a system that both generates attacks and evaluates them is compromised by design</td>
+            <td class="loc">p. 4 §Evaluation</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Must define the Judge's evaluation criteria and how to prevent it from drifting as the target system changes</td>
+            <td class="loc">p. 4 §Evaluation</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">Must validate the Judge itself — how do you validate the Judge is not drifting and criteria are consistent across runs</td>
+            <td class="loc">p. 4 §Evaluation</td>
+            <td class="cat"><span class="badge badge-reqword">Req-word</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+  </div>
+</div>
+
+<!-- ===== IMPLICIT / NEGATIVE REQUIREMENTS ===== -->
+<div class="section negative-section" id="implicit">
+  <div class="section-header">
+    <h2>Implicit &amp; Negative Requirements</h2>
+    <span class="badge badge-negative">Must NOT / Grading Standard</span>
+  </div>
+  <div class="section-body">
+
+    <!-- NEGATIVE REQUIREMENTS -->
+    <details class="sub" open>
+      <summary>Negative / Prohibited Patterns <span class="sub-count">5 items</span></summary>
+      <div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>PROHIBITED:</strong> A single-agent or pipeline architecture does not satisfy this assignment. The problems are structured specifically because they require different agents with different roles, capabilities, and trust levels operating in coordination.</div>
+            <div class="neg-meta">PRD p. 3 (body) + p. 9 (Architecture Requirement callout) | Category: Negative/Hard Gate</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>PROHIBITED:</strong> An agent that both generates attacks and evaluates them. "A system that does both in the same context has a conflict of interest by design." Attack generation and attack evaluation are different jobs.</div>
+            <div class="neg-meta">PRD p. 9 §Multi-Agent | Category: Negative/Architecture</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>PROHIBITED:</strong> A static test suite as the primary mechanism. "A static test suite is not the answer. An autonomous multi-agent red team is." Static payload lists become outdated quickly.</div>
+            <div class="neg-meta">PRD p. 3 §Why This Matters + p. 4 §Adversarial Robustness | Category: Negative/Design</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>PROHIBITED:</strong> Autonomous remediation without human approval gates. "A system that autonomously files vulnerability reports, recommends patches, or triggers remediation workflows must have clearly defined trust boundaries and human approval gates."</div>
+            <div class="neg-meta">PRD p. 5 §Discovery, Remediation &amp; Trust | Category: Negative/Trust</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>PROHIBITED:</strong> Running the adversarial platform only against a mock (not a live system). Platform must run tests against a live system at every checkpoint.</div>
+            <div class="neg-meta">PRD p. 7 §Stage 1 Hard Gate | Category: Negative/HardGate</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- IMPLICIT QUALITY STANDARDS -->
+    <details class="sub">
+      <summary>Implicit Quality Standards &amp; Grading Bars <span class="sub-count">5 items</span></summary>
+      <div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>QUALITY BAR — Documentation:</strong> "The bar is not that the Documentation Agent produces interesting output. The bar is that a senior security engineer could reproduce, validate, and fix the vulnerability based solely on what the agent writes."</div>
+            <div class="neg-meta">PRD p. 10 §Documentation Agent | Category: Implicit Quality Standard</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>GRADING STANDARD — Final Note:</strong> "The deliverable that matters is not the one that finds the most impressive jailbreak in a demo. It's the one you could defend in front of a hospital CISO who is deciding whether to trust this platform with continuous security testing of systems their physicians depend on. That is the standard. Build to it."</div>
+            <div class="neg-meta">PRD p. 12 §Final Note | Category: Implicit Grading Standard</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>ARCHITECTURAL QUALITY BAR:</strong> "The requirement is that your decisions are deliberate, defensible, and grounded in evidence." Every architectural decision must be traceable back to the problem of continuously identifying, evaluating, and defending against adversarial attacks.</div>
+            <div class="neg-meta">PRD p. 3 §Hard Problems | Category: Implicit Requirement</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>REGRESSION QUALITY BAR:</strong> "A test that passes because the model's behavior changed — not because the vulnerability was actually fixed — is worse than no test at all." Regression passes must be semantically meaningful.</div>
+            <div class="neg-meta">PRD p. 10 §Regression &amp; Validation | Category: Implicit Quality Standard</div>
+          </div>
+        </div>
+        <div class="neg-item">
+          <input type="checkbox">
+          <div class="neg-content">
+            <div class="neg-text"><strong>AUTONOMY REQUIREMENT:</strong> The platform must operate "without a human in the loop for every step." The Red Team Agent "should not need a human to tell it what to try next." Full human-in-loop operation fails the autonomy bar.</div>
+            <div class="neg-meta">PRD p. 3 §Why This Matters + p. 4 §Adversarial Robustness | Category: Implicit Requirement</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- TRUST BOUNDARIES -->
+    <details class="sub">
+      <summary>Trust Boundary Design Requirements <span class="sub-count">3 items</span></summary>
+      <table class="req-table">
+        <thead><tr><th></th><th>Requirement</th><th>Location</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must define where it stops and asks a human versus proceeding autonomously — this is an explicit design decision, not an implementation detail</td>
+            <td class="loc">p. 5 §Trust</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must define how it communicates confidence, and what happens when that confidence is wrong (false positive = wasted engineering time; false negative = uncaught vulnerability)</td>
+            <td class="loc">p. 5 §Trust</td>
+            <td class="cat"><span class="badge badge-body">Body</span></td>
+            <td class="status"><span class="badge badge-notstarted">&#9744; not-started</span></td>
+          </tr>
+          <tr>
+            <td class="cb"><input type="checkbox"></td>
+            <td class="text">System must document the model selection decision for each agent role — commercial frontier models are often trained to refuse offensive security workflows; smaller/open-source models may be more capable in certain positions. That is a deliberate decision you must make and defend.</td>
+            <td class="loc">p. 9 §Multi-Agent</td>
+            <td class="cat"><span class="badge badge-other">Other</span></td>
+            <td class="status"><span class="badge badge-progress">&#9203; in-progress</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+  </div>
+</div>
+
+<!-- ===== PRE-SEARCH CHECKLIST ===== -->
+<div class="section" id="presearch">
+  <div class="section-header">
+    <h2>Appendix: Pre-Search Checklist (PRD pp. 13–15)</h2>
+    <span style="font-size:12px; color:#64748b; margin-left: 8px;">These are grader defense probes, not scored requirements. Think through each before the defense and final submission.</span>
+  </div>
+  <div class="presearch-grid">
+
+    <div class="presearch-card">
+      <h4>Phase 1.1 — Domain &amp; Threat Selection</h4>
+      <ul>
+        <li>What specific attack categories will you target first?</li>
+        <li>What are the verification requirements for determining exploit success?</li>
+        <li>What attack surfaces require human judgment versus automated assessment?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 1.2 — Scale &amp; Performance</h4>
+      <ul>
+        <li>Expected test run volume per day/week?</li>
+        <li>Acceptable latency for attack generation and evaluation?</li>
+        <li>Concurrent testing requirements against the target system?</li>
+        <li>Cost constraints for LLM-driven attack generation?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 1.3 — Reliability Requirements</h4>
+      <ul>
+        <li>What is the cost of a false negative (missed vulnerability)?</li>
+        <li>What is the cost of a false positive (flagging safe behavior as vulnerable)?</li>
+        <li>Human-in-the-loop requirements for remediation approval?</li>
+        <li>Audit and compliance needs for security testing in a healthcare context?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 2.4 — Multi-Agent Design</h4>
+      <ul>
+        <li>How many distinct agent roles does your platform require?</li>
+        <li>What framework manages agent coordination (LangGraph, CrewAI, AutoGen, custom)?</li>
+        <li>How do agents hand off work (message queues, shared state, direct invocation)?</li>
+        <li>What happens when one agent in the pipeline fails or times out?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 2.5 — Red Team Agent Design</h4>
+      <ul>
+        <li>What model powers the Red Team Agent, and why is it appropriate for offensive security?</li>
+        <li>How does the agent mutate a failed attack into a variant?</li>
+        <li>How do you prevent the Red Team Agent from being blocked by the same safety filters it is trying to probe?</li>
+        <li>Context window requirements for multi-turn attack sequences?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 2.6 — Judge Agent Design</h4>
+      <ul>
+        <li>How does the Judge determine success vs. failure vs. partial for each attack category?</li>
+        <li>How do you validate that the Judge's criteria are consistent across runs?</li>
+        <li>What happens when the Judge is uncertain — does it escalate to a human?</li>
+        <li>How do you prevent the Judge from drifting as the target system changes?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 2.7 — Orchestrator Design</h4>
+      <ul>
+        <li>What signals does the Orchestrator read to prioritize the next attack campaign?</li>
+        <li>How does the Orchestrator decide when a category is sufficiently covered?</li>
+        <li>What triggers a regression run — a new deployment, a time window, or both?</li>
+        <li>How does the Orchestrator manage cost across agents in a single session?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 2.8 — Observability Strategy</h4>
+      <ul>
+        <li>LangSmith vs. Langfuse vs. Braintrust vs. custom — which surfaces inter-agent traces?</li>
+        <li>What metrics matter most for a multi-agent security platform?</li>
+        <li>How do you trace a vulnerability finding back through all the agents that produced it?</li>
+        <li>Cost tracking at the agent level, not just the platform level?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 3.8 — Failure Mode Analysis</h4>
+      <ul>
+        <li>What happens when the Red Team Agent generates content that is itself harmful?</li>
+        <li>How do you handle a Judge Agent that starts agreeing with everything?</li>
+        <li>What is the fallback when the Orchestrator has no clear next priority?</li>
+        <li>How do you handle cascading failures across agents in a single test run?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 3.9 — Trust &amp; Safety for the Platform Itself</h4>
+      <ul>
+        <li>How do you prevent the adversarial platform from being turned against systems it should not attack?</li>
+        <li>Access controls for who can trigger agent runs and view vulnerability reports?</li>
+        <li>What approval is required before the Documentation Agent files a critical-severity report?</li>
+        <li>How do you audit what each agent did during an overnight run?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 3.10 — Testing the Tester</h4>
+      <ul>
+        <li>How do you validate that the Red Team Agent is actually generating novel attacks?</li>
+        <li>Ground truth dataset for evaluating Judge Agent accuracy?</li>
+        <li>How do you detect when the platform is producing low-quality signal?</li>
+        <li>What does it mean for the multi-agent system itself to regress?</li>
+      </ul>
+    </div>
+
+    <div class="presearch-card">
+      <h4>Phase 3.11 — Iteration Planning</h4>
+      <ul>
+        <li>How will you add new agent roles as the platform matures?</li>
+        <li>Eval-driven improvement cycle for each agent independently?</li>
+        <li>How does the platform incorporate newly published attack techniques automatically?</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== PAGE APPENDIX ===== -->
+<div class="section" id="appendix">
+  <div class="section-header">
+    <h2>Page-by-Page Extraction Reference</h2>
+    <span style="font-size:12px; color:#64748b; margin-left: 8px;">Verify nothing was missed — what was extracted from each PRD page.</span>
+  </div>
+  <div class="appendix-grid">
+
+    <div class="page-card">
+      <h4>Page 1 — Title + "How to Use This Case Study"</h4>
+      <p>Purpose framing. "This case study is your north star." Establishes the floor / ceiling framing. Evaluated on thoroughness, thoughtfulness, creativity, ability to leverage technology. No scored requirements — context only.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 2 — The Scenario + Objectives</h4>
+      <p>OpenEMR Clinical Co-Pilot scenario context. Lists 8 platform objectives: discover vulnerabilities automatically, generate attacks dynamically, measure success/coverage, convert exploits to repeatable evals, validate fixes, prevent regressions, document professionally, improve visibility. Operational realities: frontier models expensive + refuse offensive work; open-source may be better for attack generation. No hard requirements extracted from objectives list — they are captured in the body-text requirements on subsequent pages.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 3 — Why This Matters + The Hard Problems</h4>
+      <p>Sets "autonomous multi-agent red team" as the bar vs. static test suite. <strong>Key requirement extracted:</strong> single-agent or pipeline architecture does not satisfy this assignment (Negative/HardGate). "The requirement is that your decisions are deliberate, defensible, and grounded in evidence." Hard Problems section: Adversarial Robustness — static payload lists outdated, need probe/mutate/escalate agent that acts without human direction.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 4 — Adversarial Robustness + Evaluation &amp; Regression + Visibility</h4>
+      <p><strong>Requirements extracted:</strong> Judge Agent independence (not same agent as attack generator). Must define Judge's evaluation criteria + prevent drift + validate the Judge itself. Orchestrator role described: reads coverage gaps / high-severity findings / regressions and decides where to direct Red Team. Logging, reporting, replayability, trend analysis are not afterthoughts — they are signals the Orchestrator depends on.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 5 — Cost/Scale/Model Constraints + Discovery/Remediation/Trust</h4>
+      <p><strong>Requirements extracted:</strong> Trust boundary design — where does the system stop and ask a human? How does it communicate confidence? Autonomous systems filing vuln reports / recommending patches / triggering remediation must have human approval gates. Traditional non-AI security tooling may outperform LLMs in certain areas — choice is left open-ended.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 6 — Project Schedule + MVP Stages table + Stage 1 body</h4>
+      <p><strong>Requirements extracted:</strong> Schedule table (Architecture Defense / MVP / Final deadlines). Stage 1–4 deliverables table. Stage 1 body: target must be running locally and deployed; document any changes made.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 7 — Stage 1 Hard Gate + Stage 2 full attack surface map</h4>
+      <p><strong>Requirements extracted:</strong> HG-1 (deployed target URL with every checkpoint). Stage 2 threat model with 6 attack categories (each with sub-items), per-category analysis requirements, HG-2 (THREAT_MODEL.md ~500 word summary).</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 8 — Stage 3 test cases + HG-3 + Stage 4 architecture plan + HG-4</h4>
+      <p><strong>Requirements extracted:</strong> Stage 3: 6-field test case format (category, prompt, expected, observed, severity, regression flag). HG-3 (evals/ + 3 attack categories + 1 live agent role). Stage 4: 8 architecture plan sub-items. HG-4 (ARCHITECTURE.md ~500 word summary, agent definitions).</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 9 — Platform Requirements + Architecture Requirement callout + Multi-Agent section</h4>
+      <p><strong>Requirements extracted:</strong> HG-5 / Architecture Requirement (not single-agent or pipeline; ARCHITECTURE.md must define each agent inputs/outputs/trust/coordination). 7 "must collectively be capable of" items. Model selection deliberate decision requirement.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 10 — Documentation Agent + Regression Harness + Observability Layer</h4>
+      <p><strong>Requirements extracted:</strong> Documentation Agent converts confirmed exploits without human writing. 6-field vulnerability report format. Quality bar: senior security engineer could reproduce/validate/fix from report alone. Regression harness: 4 requirements (versioned storage, auto-run, detect reappeared, flag cross-category regression). Regression quality bar (pass = fix, not behavior change). Observability Layer: 6 questions platform must be able to answer.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 11 — Submission Requirements Table</h4>
+      <p><strong>Requirements extracted:</strong> 8 formal deliverables in table format: GitHub Repo, THREAT_MODEL.md, USERS.md, ARCHITECTURE.md, Demo Video (3-5 min), Eval Dataset (evals/), Vulnerability Reports (min 3), AI Cost Analysis (4 scale tiers). Deployed Application (live tests running).</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 12 — Social Post (Final only) + Final Note</h4>
+      <p><strong>Requirements extracted:</strong> Social Post on X or LinkedIn, show platform in action, tag @GauntletAI. Final Note / Grading Standard: hospital CISO trustability bar. "That is the standard. Build to it."</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 13 — Pre-Search Checklist Phase 1</h4>
+      <p>Defense probe questions — not scored requirements. Phase 1: Domain &amp; Threat Selection (3 questions), Scale &amp; Performance (4 questions), Reliability Requirements (4 questions). Extracted to Pre-Search Appendix section.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 14 — Pre-Search Checklist Phase 2</h4>
+      <p>Defense probe questions. Phase 2: Multi-Agent Design (4 questions), Red Team Agent Design (4 questions), Judge Agent Design (4 questions), Orchestrator Design (4 questions), Observability Strategy (4 questions). Extracted to Pre-Search Appendix section.</p>
+    </div>
+
+    <div class="page-card">
+      <h4>Page 15 — Pre-Search Checklist Phase 3</h4>
+      <p>Defense probe questions. Phase 3: Failure Mode Analysis (4 questions), Trust &amp; Safety for Platform Itself (4 questions), Testing the Tester (4 questions), Iteration Planning (3 questions). Extracted to Pre-Search Appendix section.</p>
+    </div>
+
+  </div>
+</div>
+
+<div style="text-align:center; color:#9ca3af; font-size:11px; margin-top:40px; padding-bottom:20px;">
+  PRD-REQUIREMENTS.html — generated 2026-05-11 from 15-page PDF extraction — all requirements map to PRD page + section — no requirements invented
+</div>
+
+</div><!-- .page -->
+
+<script>
+(function () {
+  'use strict';
+
+  // -----------------------------------------------------------------------
+  // STORAGE
+  // -----------------------------------------------------------------------
+  var STORAGE_KEY = 'clinical-redteam-prd-checklist-v1';
+
+  function storageAvailable() {
+    try {
+      var k = '__storage_test__';
+      localStorage.setItem(k, '1');
+      localStorage.removeItem(k);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  var _memStore = {};
+  var useLocalStorage = storageAvailable();
+
+  function loadStore() {
+    if (!useLocalStorage) return _memStore;
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveStore(store) {
+    if (!useLocalStorage) { _memStore = store; return; }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    } catch (e) {
+      // quota exceeded or disabled — fall back silently
+      _memStore = store;
+    }
+  }
+
+  var store = loadStore();
+
+  // -----------------------------------------------------------------------
+  // STATUS CYCLE
+  // -----------------------------------------------------------------------
+  var STATUS_CYCLE = ['not-started', 'in-progress', 'done'];
+
+  var STATUS_LABELS = {
+    'not-started': '☐ Not Started',
+    'in-progress': '⏳ In Progress',
+    'done': '✓ Done'
+  };
+
+  var STATUS_ARIA = {
+    'not-started': 'Status: Not started. Click to cycle to in-progress.',
+    'in-progress': 'Status: In progress. Click to cycle to done.',
+    'done': 'Status: Done. Click to cycle to not-started.'
+  };
+
+  function nextStatus(current) {
+    var idx = STATUS_CYCLE.indexOf(current);
+    return STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+  }
+
+  // -----------------------------------------------------------------------
+  // DOM DISCOVERY — find all requirement rows
+  // -----------------------------------------------------------------------
+  // We assign stable IDs at runtime based on section + position.
+  // Row types:
+  //   1. td.status rows in req-table  (section req rows)
+  //   2. div.hg-item rows             (hard gate rows)
+  //   3. div.neg-item rows            (negative / implicit rows)
+
+  var allRows = []; // [{id, statusBtn, checkbox, sectionFilter}]
+
+  function inferInitialStatus(badgeEl) {
+    if (!badgeEl) return 'not-started';
+    var cls = badgeEl.className || '';
+    if (cls.indexOf('badge-done') !== -1) return 'done';
+    if (cls.indexOf('badge-progress') !== -1) return 'in-progress';
+    return 'not-started';
+  }
+
+  function makeSectionFilter(el) {
+    // Walk up to find the nearest section anchor
+    var node = el;
+    while (node && node !== document.body) {
+      var id = node.id;
+      if (id === 'hard-gates') return 'hard-gates';
+      if (id === 'mvp') return 'mvp';
+      if (id === 'final') return 'final';
+      if (id === 'both') return 'both';
+      if (id === 'implicit') return 'implicit';
+      if (id === 'presearch') return 'presearch';
+      node = node.parentElement;
+    }
+    return 'other';
+  }
+
+  function createStatusBtn(initialStatus, reqId) {
+    var btn = document.createElement('button');
+    btn.className = 'status-btn';
+    btn.type = 'button';
+    btn.dataset.reqId = reqId;
+    btn.dataset.status = initialStatus;
+    btn.textContent = STATUS_LABELS[initialStatus];
+    btn.setAttribute('aria-label', STATUS_ARIA[initialStatus]);
+    btn.title = 'Click to cycle status';
+    return btn;
+  }
+
+  function initRows() {
+    var counter = 0;
+
+    // ---- 1. Hard gate items ----
+    var hgItems = document.querySelectorAll('.hg-item');
+    hgItems.forEach(function (item, i) {
+      var reqId = 'req-hg-' + (i + 1);
+      item.dataset.reqId = reqId;
+
+      // Find existing checkbox
+      var cb = item.querySelector('input[type="checkbox"]');
+
+      // Find existing status badge in .hg-status
+      var hgStatus = item.querySelector('.hg-status');
+      var oldBadge = hgStatus ? hgStatus.querySelector('.badge') : null;
+
+      // Determine initial status from store or HTML
+      var initStatus = (store[reqId] && store[reqId].status) || inferInitialStatus(oldBadge);
+
+      // Replace old badge span with button
+      var btn = createStatusBtn(initStatus, reqId);
+      if (hgStatus) {
+        // Remove just the badge (keep the sub-note text node)
+        if (oldBadge) hgStatus.removeChild(oldBadge);
+        hgStatus.insertBefore(btn, hgStatus.firstChild);
+      }
+
+      // Sync checkbox to stored/initial status
+      if (cb) {
+        cb.checked = (initStatus === 'done');
+        cb.setAttribute('aria-label', 'Mark requirement as done');
+      }
+
+      // Section filter: hard gates belong to both 'hard-gates' and 'mvp'
+      allRows.push({ id: reqId, statusBtn: btn, checkbox: cb, sectionFilter: 'hard-gates' });
+      counter++;
+    });
+
+    // ---- 2. Requirement table rows (td.status) ----
+    var statusCells = document.querySelectorAll('table.req-table td.status');
+    statusCells.forEach(function (td, i) {
+      var tr = td.closest('tr');
+      if (!tr) return;
+
+      // Determine section
+      var sectionFilter = makeSectionFilter(td);
+
+      var reqId = 'req-' + sectionFilter + '-' + (i + 1);
+      tr.dataset.reqId = reqId;
+
+      var oldBadge = td.querySelector('.badge');
+      var cb = tr.querySelector('td.cb input[type="checkbox"]');
+
+      var initStatus = (store[reqId] && store[reqId].status) || inferInitialStatus(oldBadge);
+
+      var btn = createStatusBtn(initStatus, reqId);
+      td.innerHTML = '';
+      td.appendChild(btn);
+
+      if (cb) {
+        cb.checked = (initStatus === 'done');
+        cb.setAttribute('aria-label', 'Mark requirement as done');
+      }
+
+      allRows.push({ id: reqId, statusBtn: btn, checkbox: cb, sectionFilter: sectionFilter });
+      counter++;
+    });
+
+    // ---- 3. Negative / implicit items (neg-item) ----
+    var negItems = document.querySelectorAll('.neg-item');
+    negItems.forEach(function (item, i) {
+      var reqId = 'req-implicit-neg-' + (i + 1);
+      item.dataset.reqId = reqId;
+
+      var cb = item.querySelector('input[type="checkbox"]');
+      var initStatus = (store[reqId] && store[reqId].status) || 'not-started';
+      if (store[reqId] && store[reqId].completed) initStatus = 'done';
+
+      // Neg items have no status badge — we add one
+      var negContent = item.querySelector('.neg-content');
+      if (negContent && !item.querySelector('.status-btn')) {
+        var btnWrap = document.createElement('div');
+        btnWrap.style.cssText = 'margin-top:6px;';
+        var btn = createStatusBtn(initStatus, reqId);
+        btnWrap.appendChild(btn);
+        negContent.appendChild(btnWrap);
+
+        if (cb) {
+          cb.checked = (initStatus === 'done');
+        }
+
+        allRows.push({ id: reqId, statusBtn: btn, checkbox: cb, sectionFilter: 'implicit' });
+        counter++;
+      }
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // PROGRESS CALCULATION
+  // -----------------------------------------------------------------------
+  function calcProgress() {
+    var total = allRows.length;
+    var score = 0;
+    var doneCount = 0;
+    var inProgressCount = 0;
+    allRows.forEach(function (row) {
+      var s = row.statusBtn.dataset.status;
+      if (s === 'done') { score += 1; doneCount++; }
+      else if (s === 'in-progress') { score += 0.5; inProgressCount++; }
+    });
+    var displayComplete = Math.ceil(score);
+    return { total: total, score: score, displayComplete: displayComplete, doneCount: doneCount, inProgressCount: inProgressCount };
+  }
+
+  function updateProgressUI() {
+    var p = calcProgress();
+    var pct = p.total > 0 ? (p.score / p.total) * 100 : 0;
+
+    var label = document.getElementById('ab-progress-label');
+    if (label) {
+      label.textContent = p.displayComplete + '/' + p.total + ' requirements complete (' + p.doneCount + ' done, ' + p.inProgressCount + ' in-progress)';
+    }
+
+    var fill = document.getElementById('progress-bar-fill');
+    if (fill) {
+      fill.style.width = Math.min(100, pct).toFixed(1) + '%';
+    }
+
+    // Update section counters in section-header h2 text
+    updateSectionCounters();
+  }
+
+  function updateSectionCounters() {
+    // We update the sub-section summary counts only for sections we track
+    // For simplicity, update the sub-section <summary> .sub-count spans
+    // We compute per-section counts dynamically
+    var sectionMap = {};
+    allRows.forEach(function (row) {
+      var sf = row.sectionFilter;
+      if (!sectionMap[sf]) sectionMap[sf] = { done: 0, inProgress: 0, total: 0 };
+      sectionMap[sf].total++;
+      var s = row.statusBtn.dataset.status;
+      if (s === 'done') sectionMap[sf].done++;
+      else if (s === 'in-progress') sectionMap[sf].inProgress++;
+    });
+
+    // Update top-level section headers
+    var sections = [
+      { id: 'hard-gates', key: 'hard-gates' },
+      { id: 'mvp',        key: 'mvp' },
+      { id: 'final',      key: 'final' },
+      { id: 'both',       key: 'both' },
+      { id: 'implicit',   key: 'implicit' }
+    ];
+
+    sections.forEach(function (s) {
+      var el = document.getElementById(s.id);
+      if (!el) return;
+      var h2 = el.querySelector('.section-header h2, .section-header h2');
+      if (!h2) return;
+      var data = sectionMap[s.key];
+      if (!data) return;
+      // Store original text once
+      if (!h2.dataset.origText) h2.dataset.origText = h2.textContent.split(' (')[0];
+      var score = data.done + data.inProgress * 0.5;
+      var display = Math.ceil(score);
+      h2.textContent = h2.dataset.origText + ' (' + display + '/' + data.total + ' complete)';
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // SAVE TO STORE
+  // -----------------------------------------------------------------------
+  function saveRow(reqId, status) {
+    store[reqId] = {
+      status: status,
+      completed: (status === 'done'),
+      last_updated: new Date().toISOString()
+    };
+    saveStore(store);
+    updateSaveIndicator();
+  }
+
+  // -----------------------------------------------------------------------
+  // SAVE INDICATOR
+  // -----------------------------------------------------------------------
+  var _lastSaveTime = null;
+  var _saveIndicatorInterval = null;
+
+  function updateSaveIndicator() {
+    _lastSaveTime = Date.now();
+    var el = document.getElementById('ab-save-indicator');
+    if (el) el.textContent = useLocalStorage ? 'Saved just now' : 'State not persisted (localStorage unavailable)';
+
+    if (_saveIndicatorInterval) clearInterval(_saveIndicatorInterval);
+    _saveIndicatorInterval = setInterval(function () {
+      if (!_lastSaveTime) return;
+      var el = document.getElementById('ab-save-indicator');
+      if (!el) return;
+      if (!useLocalStorage) return;
+      var diff = Math.floor((Date.now() - _lastSaveTime) / 1000);
+      if (diff < 10) { el.textContent = 'Saved just now'; return; }
+      if (diff < 60) { el.textContent = 'Saved ' + diff + 's ago'; return; }
+      var mins = Math.floor(diff / 60);
+      el.textContent = 'Saved ' + mins + ' min ago';
+    }, 10000);
+  }
+
+  // -----------------------------------------------------------------------
+  // STATUS BUTTON CLICK HANDLER
+  // -----------------------------------------------------------------------
+  function handleStatusClick(e) {
+    var btn = e.currentTarget;
+    var reqId = btn.dataset.reqId;
+    var current = btn.dataset.status;
+    var next = nextStatus(current);
+
+    btn.dataset.status = next;
+    btn.textContent = STATUS_LABELS[next];
+    btn.setAttribute('aria-label', STATUS_ARIA[next]);
+
+    // Flash animation
+    btn.classList.remove('flash');
+    // Force reflow
+    void btn.offsetWidth;
+    btn.classList.add('flash');
+
+    // Sync checkbox if present
+    var row = allRows.find(function (r) { return r.id === reqId; });
+    if (row && row.checkbox) {
+      row.checkbox.checked = (next === 'done');
+    }
+
+    saveRow(reqId, next);
+    updateProgressUI();
+    applyCurrentFilter();
+  }
+
+  // -----------------------------------------------------------------------
+  // CHECKBOX HANDLER
+  // -----------------------------------------------------------------------
+  function handleCheckboxChange(e) {
+    var cb = e.currentTarget;
+    // Find the row that owns this checkbox
+    var row = allRows.find(function (r) { return r.checkbox === cb; });
+    if (!row) return;
+
+    var newStatus = cb.checked ? 'done' : 'not-started';
+    row.statusBtn.dataset.status = newStatus;
+    row.statusBtn.textContent = STATUS_LABELS[newStatus];
+    row.statusBtn.setAttribute('aria-label', STATUS_ARIA[newStatus]);
+
+    saveRow(row.id, newStatus);
+    updateProgressUI();
+    applyCurrentFilter();
+  }
+
+  // -----------------------------------------------------------------------
+  // FILTERING
+  // -----------------------------------------------------------------------
+  var currentFilter = 'all';
+
+  function applyCurrentFilter() {
+    applyFilter(currentFilter);
+  }
+
+  function applyFilter(filter) {
+    currentFilter = filter;
+
+    // Update filter button active states
+    document.querySelectorAll('.filter-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+
+    // Determine which rows to show
+    allRows.forEach(function (row) {
+      var show = true;
+      var status = row.statusBtn.dataset.status;
+      var sf = row.sectionFilter;
+
+      if (filter === 'not-started')  show = (status === 'not-started');
+      else if (filter === 'in-progress') show = (status === 'in-progress');
+      else if (filter === 'done')        show = (status === 'done');
+      else if (filter === 'hard-gates')  show = (sf === 'hard-gates');
+      else if (filter === 'mvp')         show = (sf === 'mvp' || sf === 'hard-gates');
+      else if (filter === 'final')       show = (sf === 'final');
+      // 'all' shows everything
+
+      // Find the containing row element
+      var rowEl = row.statusBtn.closest('tr, .hg-item, .neg-item');
+      if (rowEl) {
+        rowEl.classList.toggle('req-row-hidden', !show);
+      }
+    });
+
+    // Open any <details> that have visible rows; ensure sections with all-hidden don't look broken
+    document.querySelectorAll('details.sub').forEach(function (details) {
+      var visibleRows = details.querySelectorAll('tr:not(.req-row-hidden), .hg-item:not(.req-row-hidden), .neg-item:not(.req-row-hidden)');
+      var hasVisible = visibleRows.length > 0;
+      // If filter is active and has visible items, open the details
+      if (filter !== 'all' && hasVisible) {
+        details.open = true;
+      }
+      // Don't close details when filter is 'all' — respect user's manual expand/collapse
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // EXPORT JSON
+  // -----------------------------------------------------------------------
+  function exportJSON() {
+    var data = {
+      exported: new Date().toISOString(),
+      storage_key: STORAGE_KEY,
+      requirements: store
+    };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'prd-checklist-state-' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // -----------------------------------------------------------------------
+  // RESET ALL
+  // -----------------------------------------------------------------------
+  function resetAll() {
+    if (!confirm('Reset all requirement statuses to not-started? This cannot be undone.')) return;
+
+    store = {};
+    saveStore(store);
+
+    allRows.forEach(function (row) {
+      row.statusBtn.dataset.status = 'not-started';
+      row.statusBtn.textContent = STATUS_LABELS['not-started'];
+      row.statusBtn.setAttribute('aria-label', STATUS_ARIA['not-started']);
+      if (row.checkbox) row.checkbox.checked = false;
+    });
+
+    // Reset section header text
+    document.querySelectorAll('[data-orig-text]').forEach(function (el) {
+      el.textContent = el.dataset.origText;
+    });
+
+    updateProgressUI();
+    applyFilter('all');
+    updateSaveIndicator();
+  }
+
+  // -----------------------------------------------------------------------
+  // BIND EVENTS
+  // -----------------------------------------------------------------------
+  function bindEvents() {
+    allRows.forEach(function (row) {
+      row.statusBtn.addEventListener('click', handleStatusClick);
+      if (row.checkbox) {
+        row.checkbox.addEventListener('change', handleCheckboxChange);
+      }
+    });
+
+    // Filter buttons
+    document.querySelectorAll('.filter-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        applyFilter(btn.dataset.filter);
+      });
+    });
+
+    // Action buttons
+    var btnExport = document.getElementById('btn-export-json');
+    if (btnExport) btnExport.addEventListener('click', exportJSON);
+
+    var btnReset = document.getElementById('btn-reset-all');
+    if (btnReset) btnReset.addEventListener('click', resetAll);
+  }
+
+  // -----------------------------------------------------------------------
+  // INIT
+  // -----------------------------------------------------------------------
+  function init() {
+    initRows();
+    bindEvents();
+    updateProgressUI();
+
+    // Show save indicator if there is pre-existing data
+    if (Object.keys(store).length > 0) {
+      var el = document.getElementById('ab-save-indicator');
+      if (el) {
+        el.textContent = useLocalStorage ? 'State loaded from localStorage' : '';
+      }
+    }
+  }
+
+  // Run after DOM is ready (script is at end of body, so DOM is already ready)
+  init();
+})();
+</script>
+
+</body>
+</html>

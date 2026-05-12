@@ -1,0 +1,37 @@
+# Local dev / scratch
+*.local.*
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Eval artifacts (keep results curated; raw runs ignored by default)
+evals/results/raw/
+evals/results/*.json
+
+# GauntletAI project notes (local only — mirrored to OneDrive backup,
+# not for upstream). Anchored to repo root.
+/.gauntlet/
+
+# Claude Code session state (local only — mirrored to OneDrive backup).
+/.claude/
+
+# Working files at repo root that have repeatedly been swept in by
+# `git add -A` despite living outside .gauntlet/. Pin them here so
+# `git status` keeps them as ignored, not untracked.
+/CLAUDE_SESSION_HANDOFF.md

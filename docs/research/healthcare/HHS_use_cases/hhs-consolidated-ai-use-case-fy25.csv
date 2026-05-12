@@ -1,0 +1,21 @@
+AI Use Case,Commercial Examples,Agency Use (Y/N)?,Name of Commercial Product or Service Used,Estimated # of Licenses/Users
+Scheduling internal-to-government meetings or appointments or setting reminders using AI.,"Calendly, Reclaim.AI",Y,"Microsoft Outlook, Microsoft Teams, Microsoft 365 Copilot","5001-10,000"
+Logging and analyzing time spent on tasks using AI-powered time management tools.,"Timely, Asana",Y,"Asana, Microsoft 365 Copilot, Monday.com",1-100
+"Transcribing, summarizing, or other efforts that improve the accessibility of a virtual meeting or interview using AI.","Otter.ai, Evernote, Fireflies",Y,"Microsoft Teams, Microsoft 365 Copilot, ChatGPT, CHIRP, Otter AI, Slack","10,000-50,000"
+Prioritizing and categorizing incoming emails using AI.,"SaneBox, OpenPaas",Y,"Microsoft Outlook, Microsoft 365 Copilot","5001-10,000"
+"Editing images, videos, or other public affairs materials using AI.","Adobe Firefly, Instagram Edits",Y,"Adobe Firefly, Gemini, Microsoft 365 Copilot, DALL-E, Biorender, Canva, ChatGPT","5001-10,000"
+Scheduling and managing social media posts using AI.,"ContentStudio, Sprout Social",Y,"Sprout Social, ChatGPT, xAI gov",101-1000
+"Generating first drafts of documents, briefing, or communication materials using AI.","ChatGPT, Gemini",Y,"Microsoft 365 Copilot Chat, Microsoft 365 Copilot, AWS, ChatGPT, Gemini, xAI gov, CHIRP, Claude, EndNote, Microsoft Azure, Synthesia, Zotero, Credal + Claude and GPT API","10,000-50,000"
+ Improving the quality of written communications using AI tools.,"Grammarly, ProWritingAid",Y,"Microsoft 365 Copilot Chat, Grammarly, Microsoft 365 Copilot, ChatGPT, Perplexity, Stanford Storm, CHIRP, Credal + Claude and GPT API","10,000-50,000"
+Summarizing the key points of a lengthy report using AI.,"ChatGPT, Perplexity",Y,"Microsoft 365 Copilot Chat, Consensus, Adobe AI Assistant, ChatGPT, Perplexity, Claude, Cortellis, OFF-X, Gemini, Gemma (open LLM, Google Deep Mind), Microsoft 365 Copilot, scite.AI","10,000-50,000"
+Creating visual representations of data sets for reports or presentations using AI.,"Tableau Agent, Julius AI",Y,"Tableau, Biorender, ChatGPT, Microsoft 365 Copilot, Gemini",1001-5000
+Using AI-assisted tools in word processors.,"Grammarly, Microsoft Copilot",Y,"Microsoft Word, Microsoft 365 Copilot, Grammarly, ChatGPT, Gemini, Signals ELN","10,000-50,000"
+Generating code using AI.,"Poolside, GitHub Copilot",Y,"Credal + Claude and GPT API, Amazon Q Developer, GitHub Copilot, Anaconda AI Navigator, ChatGPT, Claude, Gemini, IntelliJ IDEA Ult, Logi AI Prompt Builder, Microsoft 365 Copilot, Plantir Foundry, Sourcegraph","5001-10,000"
+Searching for agency information using a knowledge retrieval system.,"ChatGPT, Gemini",Y,"Credal + Claude and GPT API, Palantir Foundry, Googla Appliance, Microsoft 365 Copilot Chat, ChatGPT, Gemini, Microsoft 365 Copilot, ScanSnap AI, ServiceNow","10,000-50,000"
+Identifying and cataloging items in a storage room using AI-driven image recognition.,Google Lens,Y,"Microsoft AI Builder, Azure OpenAI Service, Google Lens",101-1000
+"Managing or implementing security controls for information systems (e.g., cybersecurity) using AI","Crowdstrike Falcon, Microsoft Defender",Y,"Crowdstrike, Purvue, Microsoft Defender, Absolute, ChatGPT, Cylance, BigFix, Ivanti, Palo Alto Firewall, SentinelOne","50,000+"
+Managing and prioritizing internal service or help desk tickets using AI.,"Supportbench, ServiceDesk Plus",Y,"ServiceDesk, DRUID AI, Supportbench, ServiceDesk Plus",101-1000
+Curating news articles and updates based on user preferences using AI.,"MediaViz AI, Google News Brief",Y,"Apple News, MediaViz AI, Google News Brief","5001-10,000"
+Planning travel routes using AI-driven map applications.,"Google Maps, Apple Maps",Y,"Google Maps, Apple Maps","10,000-50,000"
+Finding and booking travel accommodations using AI-powered platforms.,"SAP Concur, Navan",Y,"SAP Concur, Navan",1-100
+Unlocking smartphones or other devices without the need for passwords or PINs using AI-based facial recognition technology.,"Apple iPhone, Google Pixel",Y,"Apple iPhone, Windows Hello, Google Pixel","10,000-50,000"
