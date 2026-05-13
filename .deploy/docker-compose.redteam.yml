@@ -58,11 +58,15 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
 
-      # Model routing tiers (defaults baked into .env.example; the
-      # bootstrap script copies them into /opt/redteam/.env).
-      RED_TEAM_TIER1_MODEL: ${RED_TEAM_TIER1_MODEL:-deepseek/deepseek-chat}
-      RED_TEAM_TIER2_MODEL: ${RED_TEAM_TIER2_MODEL:-meta-llama/llama-3.1-70b-instruct}
-      RED_TEAM_TIER3_MODEL: ${RED_TEAM_TIER3_MODEL:-anthropic/claude-haiku-4.5}
+      # Model routing per agent tier (names match openrouter.py:50-60).
+      # Primary + comma-separated fallback list per tier. Fallback fires
+      # on 429/5xx/connect/404.
+      RED_TEAM_MODEL: ${RED_TEAM_MODEL:-deepseek/deepseek-chat}
+      RED_TEAM_FALLBACK_MODELS: ${RED_TEAM_FALLBACK_MODELS:-meta-llama/llama-3.1-70b-instruct,anthropic/claude-haiku-4.5}
+      JUDGE_MODEL: ${JUDGE_MODEL:-anthropic/claude-sonnet-4-5}
+      JUDGE_FALLBACK_MODEL: ${JUDGE_FALLBACK_MODEL:-anthropic/claude-haiku-4.5}
+      DOCUMENTATION_MODEL: ${DOCUMENTATION_MODEL:-anthropic/claude-haiku-4.5}
+      DOCUMENTATION_FALLBACK_MODEL: ${DOCUMENTATION_FALLBACK_MODEL:-anthropic/claude-sonnet-4-5}
 
       # Cost guard. Daemon halts if cumulative session cost exceeds.
       # Compose-default conservative; raise via /opt/redteam/.env if
