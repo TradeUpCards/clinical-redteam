@@ -102,6 +102,21 @@ _DEFAULT_REQUEST_TIMEOUT = 30.0
 _DEFAULT_MAX_5XX_RETRIES = 2
 _DEFAULT_5XX_BACKOFF_BASE_SECONDS = 1.0
 
+_DEFAULT_HEALTH_PATH = "/health"
+"""Path used by `health_fingerprint`. Override via RED_TEAM_TARGET_HEALTH_PATH
+env var when the target exposes its readiness via a different route (e.g.
+`/meta/health/readyz` on a FastAPI server with a router prefix)."""
+
+_HEALTH_FINGERPRINT_UNREACHABLE = "unreachable"
+"""Sentinel returned by `health_fingerprint` when the endpoint cannot be
+reached. F7 treats a `previous == current == unreachable` pair as 'no
+change' so a sustained outage doesn't perpetually trigger regression
+replay; a transition `unreachable → sha256:...` (or the reverse) IS a
+change worth replaying for, because the target has come back up or gone
+down between runs."""
+
+_HEALTH_FINGERPRINT_HEX_PREFIX_LEN = 16
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -222,6 +237,7 @@ class TargetClient:
     request_timeout: float = _DEFAULT_REQUEST_TIMEOUT
     max_5xx_retries: int = _DEFAULT_MAX_5XX_RETRIES
     backoff_base_seconds: float = _DEFAULT_5XX_BACKOFF_BASE_SECONDS
+    health_path: str = _DEFAULT_HEALTH_PATH
     http_client: httpx.Client | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -300,6 +316,10 @@ class TargetClient:
             user_id=user_id,
             sentinel_patient_ids=sentinel_patient_ids,
             hmac_max_age_seconds=hmac_max_age_seconds,
+            health_path=e.get(
+                "RED_TEAM_TARGET_HEALTH_PATH", _DEFAULT_HEALTH_PATH
+            ).strip()
+            or _DEFAULT_HEALTH_PATH,
         )
 
     # -----------------------------------------------------------------------
@@ -377,6 +397,36 @@ class TargetClient:
             request_id=parsed.get("request_id") if isinstance(parsed, dict) else None,
             trace_id=parsed.get("trace_id") if isinstance(parsed, dict) else None,
         )
+
+    # -----------------------------------------------------------------------
+    # /health — fingerprint for F7 target-change regression trigger
+    # -----------------------------------------------------------------------
+
+    def health_fingerprint(self) -> str:
+        """Return a short, stable fingerprint of the target's health response.
+
+        Format: `sha256:<hex16>` derived from `sha256(response_body)[:16]`.
+        Unreachable → `"unreachable"` (see module-level sentinel).
+
+        Single-shot, no retries, no HMAC. A health endpoint that requires
+        auth is a misconfiguration we want to surface (caller sees a
+        non-`unreachable` non-`sha256:` fingerprint shift and replays
+        regression cases — operator-friendly fail-loud).
+        """
+        assert self.http_client is not None  # set in __post_init__
+        url = self.base_url.rstrip("/") + self.health_path
+        try:
+            response = self.http_client.get(url, timeout=self.request_timeout)
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.HTTPError) as exc:
+            logger.warning(
+                "health_fingerprint: target %s unreachable (%s); "
+                "treating as 'unreachable' fingerprint",
+                url, type(exc).__name__,
+            )
+            return _HEALTH_FINGERPRINT_UNREACHABLE
+        body_bytes = response.content
+        digest = hashlib.sha256(body_bytes).hexdigest()
+        return f"sha256:{digest[:_HEALTH_FINGERPRINT_HEX_PREFIX_LEN]}"
 
     # -----------------------------------------------------------------------
     # Internals
