@@ -126,14 +126,28 @@ def _make_verdict(
 
 @dataclass
 class _FakeRedTeam:
-    """Returns sequential AttackCandidates. `refuse_after` raises after N."""
+    """Returns sequential AttackCandidates. `refuse_after` raises after N.
+
+    Records `prior_verdicts` from each call so F5 plumbing can be asserted.
+    """
 
     sequence: int = 0
     refuse_after: int | None = None
     raise_on_call: Exception | None = None
+    received_calls: list[dict[str, Any]] = field(default_factory=list)
 
     def generate(self, *, seed_id: str, category: str, evals_dir: Path,
-                 sequence: int, mutate: bool) -> AttackCandidate:
+                 sequence: int, mutate: bool,
+                 prior_verdicts: list[JudgeVerdict] | None = None,
+                 ) -> AttackCandidate:
+        self.received_calls.append(
+            {
+                "seed_id": seed_id,
+                "sequence": sequence,
+                "mutate": mutate,
+                "prior_verdicts": list(prior_verdicts or []),
+            }
+        )
         if self.raise_on_call is not None:
             raise self.raise_on_call
         # Honor the caller-supplied sequence so daemon-driven runs and
@@ -143,7 +157,15 @@ class _FakeRedTeam:
             raise AttackRefusedError(
                 reason="fake_refusal", label=None, matched_text=None
             )
-        return _make_attack(sequence, category=category)
+        # `mutation_parent` carries the seed_id ONLY when mutate=True, mirroring
+        # the real RedTeamAgent.generate behavior (line 306, red_team.py).
+        # Honoring `mutate` matters for prior-verdict filtering: seed-verbatim
+        # attacks (mutate=False) have mutation_parent=None and must NOT appear
+        # in the F5 same-seed history window.
+        candidate = _make_attack(sequence, category=category)
+        return candidate.model_copy(
+            update={"mutation_parent": seed_id if mutate else None}
+        )
 
 
 @dataclass
@@ -1066,3 +1088,134 @@ def test_default_seeds_mapping_matches_run_module() -> None:
     # they must agree on the entries they share.
     for cat, seed in RUN_DEFAULTS.items():
         assert DEFAULT_SEEDS_BY_CATEGORY.get(cat) == seed
+
+
+# ---------------------------------------------------------------------------
+# F5 — verdict-informed mutation plumbing
+# ---------------------------------------------------------------------------
+
+
+def test_prior_verdicts_for_seed_returns_only_same_seed_history(
+    tmp_path: Path,
+) -> None:
+    """`_prior_verdicts_for_seed` joins verdicts to attacks and filters by mutation_parent."""
+    daemon = _build_daemon(tmp_path)
+
+    # Two same-seed attacks
+    a1 = _make_attack(1)
+    a1 = a1.model_copy(update={"mutation_parent": "c7-paraphrased-leakage"})
+    v1 = _make_verdict(1, a1.attack_id, "pass")
+    daemon.handle.save_attack(a1)
+    daemon.handle.save_verdict(v1)
+
+    a2 = _make_attack(2)
+    a2 = a2.model_copy(update={"mutation_parent": "c7-paraphrased-leakage"})
+    v2 = _make_verdict(2, a2.attack_id, "fail")
+    daemon.handle.save_attack(a2)
+    daemon.handle.save_verdict(v2)
+
+    # One different-seed attack — must be filtered out
+    a3 = _make_attack(3)
+    a3 = a3.model_copy(update={"mutation_parent": "some-other-seed"})
+    v3 = _make_verdict(3, a3.attack_id, "pass")
+    daemon.handle.save_attack(a3)
+    daemon.handle.save_verdict(v3)
+
+    result = daemon._prior_verdicts_for_seed("c7-paraphrased-leakage")
+    assert len(result) == 2
+    assert {v.attack_id for v in result} == {a1.attack_id, a2.attack_id}
+
+
+def test_prior_verdicts_for_seed_truncates_to_last_n(tmp_path: Path) -> None:
+    daemon = _build_daemon(tmp_path)
+    for i in range(1, 6):
+        atk = _make_attack(i).model_copy(
+            update={"mutation_parent": "c7-paraphrased-leakage"}
+        )
+        verdict = _make_verdict(i, atk.attack_id, "pass")
+        daemon.handle.save_attack(atk)
+        daemon.handle.save_verdict(verdict)
+
+    last_three = daemon._prior_verdicts_for_seed(
+        "c7-paraphrased-leakage", n=3
+    )
+    assert len(last_three) == 3
+    # Lexical sort by verdict_id mirrors zero-padded sequence; last 3 are 003,004,005
+    suffixes = [v.verdict_id.rsplit("_", 1)[-1] for v in last_three]
+    assert suffixes == ["003", "004", "005"]
+
+
+def test_prior_verdicts_empty_when_verdicts_dir_missing(
+    tmp_path: Path,
+) -> None:
+    daemon = _build_daemon(tmp_path)
+    # Fresh run-dir has empty verdicts/ → result is []
+    assert daemon._prior_verdicts_for_seed("c7-paraphrased-leakage") == []
+
+
+def test_run_until_halt_threads_prior_verdicts_into_red_team_calls(
+    tmp_path: Path,
+) -> None:
+    """Iteration N>1 receives the previous N-1 same-seed verdicts in
+    red_team.generate(prior_verdicts=...). Validates F5 acceptance criterion
+    'Orchestrator passes last 1-3 same-seed verdicts when available'.
+
+    Constrains the daemon to a single seeded category (SID) so accumulation
+    is visible on consecutive iterations — with all 3 categories seeded the
+    rule-3 lowest-count tiebreak distributes attacks per ARCH §3.6.1 and the
+    same seed wouldn't repeat until coverage_floor is met.
+    """
+    fake_red_team = _FakeRedTeam()
+    fake_judge = _FakeJudge(verdicts=[("pass", 0.001)])
+    daemon = _build_daemon(
+        tmp_path,
+        red_team=fake_red_team,
+        judge=fake_judge,
+    )
+    # Single-seed scope: SID only. PI + UC are intentionally unseeded so the
+    # daemon stays on c7-paraphrased-leakage across iterations.
+    daemon._seed_id_by_category = {  # type: ignore[assignment]
+        "sensitive_information_disclosure": "c7-paraphrased-leakage",
+        "prompt_injection": None,
+        "unbounded_consumption": None,
+    }
+    daemon.run_until_halt(max_iterations=3)
+
+    # 3 generate() calls total; same seed every time. prior_verdicts grows
+    # 0 → 1 → 2 (then would cap at 3 by `n=DEFAULT_PRIOR_VERDICTS_FOR_MUTATION`).
+    assert len(fake_red_team.received_calls) == 3
+    for call in fake_red_team.received_calls:
+        assert call["seed_id"] == "c7-paraphrased-leakage"
+    assert fake_red_team.received_calls[0]["prior_verdicts"] == []
+    assert len(fake_red_team.received_calls[1]["prior_verdicts"]) == 1
+    assert len(fake_red_team.received_calls[2]["prior_verdicts"]) == 2
+    for call in fake_red_team.received_calls:
+        for pv in call["prior_verdicts"]:
+            assert isinstance(pv, JudgeVerdict)
+
+
+def test_run_until_halt_caps_prior_verdicts_at_default(
+    tmp_path: Path,
+) -> None:
+    """At iteration N>4 the prior_verdicts list is capped at the default
+    (3) — older verdicts roll off so the prompt stays bounded."""
+    fake_red_team = _FakeRedTeam()
+    fake_judge = _FakeJudge(verdicts=[("pass", 0.001)])
+    daemon = _build_daemon(
+        tmp_path,
+        red_team=fake_red_team,
+        judge=fake_judge,
+        config_overrides={"coverage_floor": 100},  # never satisfy floor
+    )
+    daemon._seed_id_by_category = {  # type: ignore[assignment]
+        "sensitive_information_disclosure": "c7-paraphrased-leakage",
+        "prompt_injection": None,
+        "unbounded_consumption": None,
+    }
+    daemon.run_until_halt(max_iterations=5)
+
+    # Calls 0..4: prior_verdicts = 0, 1, 2, 3, 3 (capped)
+    counts = [
+        len(c["prior_verdicts"]) for c in fake_red_team.received_calls
+    ]
+    assert counts == [0, 1, 2, 3, 3]

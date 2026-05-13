@@ -121,6 +121,9 @@ DEFAULT_PER_ITERATION_BUDGET_USD = 0.50
 Conservative enough to cover one Red Team + one Judge + one Documentation
 call at frontier-model rates."""
 
+DEFAULT_PRIOR_VERDICTS_FOR_MUTATION = 3
+"""Max same-seed verdicts threaded into Red Team mutation prompt (F5)."""
+
 
 # Canonical seed for each category — same source-of-truth as run.py uses;
 # moved into orchestrator so A3's run.py extension imports from here.
@@ -636,6 +639,13 @@ class OrchestratorDaemon:
             return None
 
         sequence = self._next_sequence()
+        # F5: verdict-informed mutation. Pull the last 3 same-seed verdicts
+        # from disk so the LLM can reason about what didn't work and pivot to
+        # a different angle. PHI-safe: only structural fields are forwarded
+        # (see `_render_prior_verdicts_block`); Evidence is dropped.
+        prior_verdicts = self._prior_verdicts_for_seed(
+            seed_id, n=DEFAULT_PRIOR_VERDICTS_FOR_MUTATION
+        )
 
         # 1. Red Team
         try:
@@ -644,7 +654,11 @@ class OrchestratorDaemon:
                 agent_version=RED_TEAM_AGENT_VERSION,
                 agent_role="attack_generation",
                 category=category,
-                inputs={"seed_id": seed_id, "rule": sel.rule},
+                inputs={
+                    "seed_id": seed_id,
+                    "rule": sel.rule,
+                    "prior_verdict_count": len(prior_verdicts),
+                },
             ) as rt_span:
                 candidate = self.red_team.generate(
                     seed_id=seed_id,
@@ -652,6 +666,7 @@ class OrchestratorDaemon:
                     evals_dir=self.config.evals_dir,
                     sequence=sequence,
                     mutate=(not self.ledger.soft_cap_tripped()),
+                    prior_verdicts=prior_verdicts,
                 )
                 rt_span.update(output={"attack_id": candidate.attack_id})
         except AttackRefusedError as exc:
@@ -914,6 +929,46 @@ class OrchestratorDaemon:
         manifest = self.handle.load_manifest()
         return len(manifest.get("attack_ids", [])) + 1
 
+    def _prior_verdicts_for_seed(
+        self, seed_id: str, *, n: int = DEFAULT_PRIOR_VERDICTS_FOR_MUTATION
+    ) -> list[JudgeVerdict]:
+        """Return the last `n` JudgeVerdicts whose attack mutated from `seed_id`.
+
+        F5 feeds these into the Red Team mutation prompt so the LLM can pivot
+        to a different angle. Sort key: lexical verdict_id (mirrors
+        zero-padded sequence number), oldest → newest. Returns the trailing
+        window so the most recent attempt is last.
+
+        Cost is O(verdicts_on_disk). Run-dirs typically hold ≤30 verdicts at
+        MVP coverage floors; rescanning per iteration is cheap. If this ever
+        becomes hot, cache by seed_id and invalidate on save_verdict.
+
+        Errors in loading any single verdict/attack are tolerated — partial
+        history is acceptable; a missing attack file is logged at WARNING.
+        """
+        verdicts_dir = self.handle.verdicts_dir
+        if not verdicts_dir.exists():
+            return []
+        matched: list[JudgeVerdict] = []
+        for path in sorted(verdicts_dir.glob("*.json")):
+            try:
+                verdict = self.handle.load_verdict(path.stem)
+            except Exception:  # noqa: BLE001 — tolerate .tmp residue races
+                continue
+            try:
+                attack = self.handle.load_attack(verdict.attack_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "prior-verdicts lookup: verdict %s references missing "
+                    "attack %s (%s) — entry skipped",
+                    verdict.verdict_id, verdict.attack_id, exc,
+                )
+                continue
+            if attack.mutation_parent != seed_id:
+                continue
+            matched.append(verdict)
+        return matched[-n:] if n > 0 else matched
+
     def _open_findings_index(self) -> dict[Category, list[str]]:
         """Map each category → list of FAIL attack_ids not yet replayed.
 
@@ -1157,6 +1212,7 @@ __all__ = [
     "AGENT_NAME",
     "AGENT_VERSION",
     "DEFAULT_COVERAGE_FLOOR",
+    "DEFAULT_PRIOR_VERDICTS_FOR_MUTATION",
     "DEFAULT_RECENT_K",
     "DEFAULT_SEEDS_BY_CATEGORY",
     "DEFAULT_SIGNAL_FLOOR",
