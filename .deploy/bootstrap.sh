@@ -139,12 +139,14 @@ fi
 #    Keeping the compose file at $REPO_DIR/.deploy/ means `context: ..`
 #    resolves to $REPO_DIR — correct.
 #
-#    Remove any stale copy from a previous bootstrap run.
-if [[ -f "${COMPOSE_FILE}" ]]; then
-    log "Removing stale ${COMPOSE_FILE} (now referenced in-place from repo)"
-    rm -f "${COMPOSE_FILE}"
-fi
+#    Set the in-repo compose path FIRST so later steps can reference it.
 COMPOSE_FILE="${REPO_DIR}/.deploy/docker-compose.redteam.yml"
+
+#    Remove any stale copy from a previous (broken) bootstrap run.
+if [[ -f "${DEPLOY_DIR}/docker-compose.yml" ]]; then
+    log "Removing stale ${DEPLOY_DIR}/docker-compose.yml (now referenced in-place from repo)"
+    rm -f "${DEPLOY_DIR}/docker-compose.yml"
+fi
 
 # 3. Patch W2's Caddyfile to add the attacker hostname.
 #    Idempotent — checks for the marker comment, only appends if absent.
