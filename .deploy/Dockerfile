@@ -40,21 +40,31 @@ RUN apt-get update \
 RUN useradd --create-home --shell /bin/bash --uid 1000 redteam
 WORKDIR /app
 
-# --- Dependency layer (rebuilds only when pyproject changes) ----------
-COPY pyproject.toml ./
+# --- Dependency layer (rebuilds only when requirements*.txt change) -----
+# Install deps directly from requirements files — NOT from pyproject.toml's
+# editable install. Reason: pyproject has `version = { attr = "clinical_
+# redteam.__version__" }` which needs src/ on disk to resolve. The dep
+# layer doesn't have src/ yet (it's the next layer), so an editable
+# install here fails with ModuleNotFoundError: clinical_redteam. By
+# installing only requirements.txt + requirements-dev.txt here, we get
+# the heavy dep resolution cached without touching the dynamic-version
+# machinery.
+COPY requirements.txt requirements-dev.txt ./
 RUN pip install --upgrade pip \
-    && pip install -e ".[dev]" \
+    && pip install -r requirements.txt \
+    && pip install -r requirements-dev.txt \
     && pip install "gunicorn>=21.2.0"
 
 # --- Source layer (rebuilds on every src/ edit) -----------------------
+COPY pyproject.toml ./
 COPY src/ ./src/
 COPY evals/ ./evals/
 COPY ARCHITECTURE.md THREAT_MODEL.md README.md SETUP.md USERS.md RESPONSIBLE_USE.md LICENSE ./
 
-# Re-install in editable mode after source is in place so the egg-info
-# points at the right paths. (The dep-layer install was just for caching
-# the heavy dependency resolution.)
-RUN pip install -e ".[dev]"
+# Editable install — registers the `clinical-redteam` console script
+# + egg-info pointing at /app/src. Deps are already cached above so
+# this is fast (pip sees requirements satisfied, only adds the egg).
+RUN pip install -e . --no-deps
 
 # Writable evals dir under the non-root user. Compose will bind-mount
 # over this at runtime, but the ownership has to exist BEFORE the mount
