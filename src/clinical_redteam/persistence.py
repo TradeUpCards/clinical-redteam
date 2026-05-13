@@ -50,6 +50,13 @@ MANIFEST_FILENAME = "manifest.json"
 ATTACKS_SUBDIR = "attacks"
 VERDICTS_SUBDIR = "verdicts"
 VULNERABILITIES_SUBDIR = "vulnerabilities"
+REGRESSION_REPLAY_ATTACKS_SUBDIR = "regression_replay/attacks"
+REGRESSION_REPLAY_VERDICTS_SUBDIR = "regression_replay/verdicts"
+"""F7 — target-change regression replay artifacts. Kept in a separate
+subtree so the main coverage / halt / select_category logic continues to
+read only `attacks/` + `verdicts/` and isn't influenced by replay traffic.
+The dashboard generator reads `regression_replay_*_ids` indexes from the
+manifest to surface replay outcomes."""
 
 MANIFEST_SCHEMA_VERSION = 1
 """Bump when the manifest layout changes incompatibly. Readers refuse to
@@ -151,6 +158,14 @@ class RunHandle:
     def vulnerabilities_dir(self) -> Path:
         return self.run_dir / VULNERABILITIES_SUBDIR
 
+    @property
+    def regression_replay_attacks_dir(self) -> Path:
+        return self.run_dir / REGRESSION_REPLAY_ATTACKS_SUBDIR
+
+    @property
+    def regression_replay_verdicts_dir(self) -> Path:
+        return self.run_dir / REGRESSION_REPLAY_VERDICTS_SUBDIR
+
     # ------------------------------------------------------------------ writes
 
     def save_attack(self, attack: AttackCandidate) -> Path:
@@ -168,6 +183,46 @@ class RunHandle:
         self._save_unique(path, payload, identity=verdict.verdict_id)
         self._touch_manifest_index("verdict_ids", verdict.verdict_id)
         return path
+
+    def save_regression_replay_attack(self, attack: AttackCandidate) -> Path:
+        """Persist an AttackCandidate exercised by F7 regression replay.
+
+        Stored in a subtree separate from the main `attacks/` dir so the
+        Orchestrator's coverage + halt + select_category disk walks (which
+        target `attacks/` + `verdicts/`) are not influenced by replay
+        traffic. Manifest-indexed via `regression_replay_attack_ids`.
+        """
+        path = self.regression_replay_attacks_dir / f"{attack.attack_id}.json"
+        payload = attack.model_dump(mode="json")
+        self._save_unique(path, payload, identity=attack.attack_id)
+        self._touch_manifest_index(
+            "regression_replay_attack_ids", attack.attack_id
+        )
+        return path
+
+    def save_regression_replay_verdict(self, verdict: JudgeVerdict) -> Path:
+        """Persist a JudgeVerdict from F7 regression replay (see above)."""
+        path = (
+            self.regression_replay_verdicts_dir / f"{verdict.verdict_id}.json"
+        )
+        payload = verdict.model_dump(mode="json")
+        self._save_unique(path, payload, identity=verdict.verdict_id)
+        self._touch_manifest_index(
+            "regression_replay_verdict_ids", verdict.verdict_id
+        )
+        return path
+
+    def update_target_fingerprint(self, fingerprint: str) -> None:
+        """Persist the target's health fingerprint into the manifest.
+
+        F7: the orchestrator computes this at construction and on the
+        next-run compares against the persisted value. Atomic write via
+        `_touch_manifest_*` is appropriate — the field is single-valued.
+        """
+        manifest = self.load_manifest()
+        manifest["target_fingerprint"] = fingerprint
+        manifest["last_updated_at"] = _now_iso()
+        atomic_write_json(self.manifest_path, manifest)
 
     def save_vuln_draft(
         self,
@@ -269,6 +324,10 @@ def start_run(
     handle.attacks_dir.mkdir(parents=True, exist_ok=True)
     handle.verdicts_dir.mkdir(parents=True, exist_ok=True)
     handle.vulnerabilities_dir.mkdir(parents=True, exist_ok=True)
+    # F7: regression-replay subtree. Created up-front so a manifest readers
+    # can rely on the directory existing whether or not replay fired.
+    handle.regression_replay_attacks_dir.mkdir(parents=True, exist_ok=True)
+    handle.regression_replay_verdicts_dir.mkdir(parents=True, exist_ok=True)
 
     if handle.manifest_path.exists():
         existing = handle.load_manifest()
@@ -287,9 +346,12 @@ def start_run(
         "last_updated_at": _now_iso(),
         "target_url": target_url,
         "target_version_sha": target_version_sha,
+        "target_fingerprint": None,  # F7: orchestrator fills this in
         "attack_ids": [],
         "verdict_ids": [],
         "vuln_ids": [],
+        "regression_replay_attack_ids": [],  # F7
+        "regression_replay_verdict_ids": [],  # F7
         "metadata": dict(extra_metadata or {}),
     }
     atomic_write_json(handle.manifest_path, manifest)
@@ -394,6 +456,8 @@ __all__ = [
     "MANIFEST_SCHEMA_VERSION",
     "ManifestSchemaMismatchError",
     "PersistenceError",
+    "REGRESSION_REPLAY_ATTACKS_SUBDIR",
+    "REGRESSION_REPLAY_VERDICTS_SUBDIR",
     "RunHandle",
     "VERDICTS_SUBDIR",
     "VULNERABILITIES_SUBDIR",

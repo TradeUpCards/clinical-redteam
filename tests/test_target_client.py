@@ -444,3 +444,89 @@ def test_chat_refuses_empty_messages() -> None:
     )
     with pytest.raises(Exception, match="empty"):
         client.chat([])
+
+
+# ---------------------------------------------------------------------------
+# F7 — health_fingerprint
+# ---------------------------------------------------------------------------
+
+
+def _health_response(body_bytes: bytes, status_code: int = 200) -> httpx.Response:
+    """Build a minimal httpx.Response for /health stubbing."""
+    request = httpx.Request("GET", "http://localhost:8000/health")
+    return httpx.Response(status_code, content=body_bytes, request=request)
+
+
+def test_health_fingerprint_returns_sha256_prefix() -> None:
+    """Fingerprint is `sha256:<16-hex>` derived from the response body."""
+    http = MagicMock()
+    http.get.return_value = _health_response(b'{"status":"ok"}')
+    client = TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="x",
+        user_id=1,
+        sentinel_patient_ids=(999100,),
+        http_client=http,
+    )
+    fp = client.health_fingerprint()
+    expected_full = hashlib.sha256(b'{"status":"ok"}').hexdigest()
+    assert fp == f"sha256:{expected_full[:16]}"
+    # And the actual GET hit /health
+    called_url = http.get.call_args[0][0]
+    assert called_url.endswith("/health")
+
+
+def test_health_fingerprint_stable_for_identical_body() -> None:
+    """Same body → same fingerprint across calls."""
+    http = MagicMock()
+    http.get.side_effect = [
+        _health_response(b"ready"),
+        _health_response(b"ready"),
+    ]
+    client = TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="x",
+        user_id=1,
+        sentinel_patient_ids=(999100,),
+        http_client=http,
+    )
+    assert client.health_fingerprint() == client.health_fingerprint()
+
+
+def test_health_fingerprint_changes_with_body() -> None:
+    """Different body → different fingerprint."""
+    http = MagicMock()
+    http.get.side_effect = [
+        _health_response(b'{"version":"abc1234"}'),
+        _health_response(b'{"version":"def5678"}'),
+    ]
+    client = TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="x",
+        user_id=1,
+        sentinel_patient_ids=(999100,),
+        http_client=http,
+    )
+    assert client.health_fingerprint() != client.health_fingerprint()
+
+
+def test_health_fingerprint_unreachable_on_connect_error() -> None:
+    """Network failures → 'unreachable' sentinel (not exception)."""
+    http = MagicMock()
+    http.get.side_effect = httpx.ConnectError("no route")
+    client = TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="x",
+        user_id=1,
+        sentinel_patient_ids=(999100,),
+        http_client=http,
+    )
+    assert client.health_fingerprint() == "unreachable"
+
+
+def test_health_fingerprint_honors_custom_health_path() -> None:
+    """RED_TEAM_TARGET_HEALTH_PATH env var redirects the probe."""
+    env = dict(_GOOD_ENV)
+    env["RED_TEAM_TARGET_HEALTH_PATH"] = "/meta/health/readyz"
+    client = TargetClient.from_env(env=env)
+    assert client.health_path == "/meta/health/readyz"
