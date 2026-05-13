@@ -23,7 +23,7 @@ How to install and operate the platform end-to-end against the deployed target.
 ## 2. Clone + install
 
 ```bash
-git clone https://github.com/TradeUpCards/clinical-redteam.git
+git clone https://labs.gauntletai.com/coryvandenberg/clinical-redteam.git
 cd clinical-redteam
 
 # Windows PowerShell
@@ -247,7 +247,7 @@ The attacker's `redteam-daemon` reaches the target's `agent:8000` directly over 
 
 mkdir -p /opt/redteam
 cd /opt/redteam
-git clone https://github.com/TradeUpCards/clinical-redteam.git repo
+git clone https://labs.gauntletai.com/coryvandenberg/clinical-redteam.git repo
 cd repo
 sudo bash .deploy/bootstrap.sh
 ```

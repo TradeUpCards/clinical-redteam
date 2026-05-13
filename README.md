@@ -60,7 +60,7 @@ The system is built around three established frameworks rather than invented tax
 ### Install
 
 ```bash
-git clone https://github.com/TradeUpCards/clinical-redteam.git
+git clone https://labs.gauntletai.com/coryvandenberg/clinical-redteam.git
 cd clinical-redteam
 python -m venv .venv
 source .venv/bin/activate        # macOS/Linux. Windows PowerShell: .venv\Scripts\Activate.ps1
