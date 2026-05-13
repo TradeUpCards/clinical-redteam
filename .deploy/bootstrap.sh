@@ -81,6 +81,14 @@ require_repo_in_place
 
 mkdir -p "$DEPLOY_DIR" "$EVALS_DIR"
 
+# Writable subdirs that get bind-mounted into the daemon + status
+# containers. Create them up-front and chown to the in-container user
+# (uid 1000 = `redteam` per .deploy/Dockerfile). Without this the
+# container can't mkdir new run-id directories under results/ — it
+# inherits the root-owned mount and PermissionErrors on first write.
+mkdir -p "$EVALS_DIR/results" "$EVALS_DIR/vulnerabilities"
+chown -R 1000:1000 "$EVALS_DIR"
+
 # 1. Generate /opt/redteam/.env on first run; preserve across re-runs.
 #    Pulls HMAC secret from W2's .env so the attacker's signed requests
 #    match the target's verifier. OpenRouter key is the only thing the
@@ -235,5 +243,11 @@ EOF
 
 # Tail the first few daemon log lines so the operator can see signs of
 # life without copy-pasting commands.
+#
+# Pass --env-file so compose doesn't warn about unset ${VAR}s during the
+# re-parse — the container itself already has the vars from the earlier
+# `compose up`, this is just to keep the parse-time substitution clean.
 log "First 30 lines of daemon log (Ctrl-C to stop tailing):"
-docker compose -f "${COMPOSE_FILE}" logs --tail=30 redteam-daemon || true
+docker compose -f "${COMPOSE_FILE}" \
+    --env-file "${DEPLOY_DIR}/.env" \
+    logs --tail=30 redteam-daemon || true

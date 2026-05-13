@@ -72,11 +72,15 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     volumes:
-      # Bind-mount the evals tree so:
-      #  1. The image's bundled seeds/criteria are accessible
-      #  2. New run results persist outside the container lifecycle
-      #  3. The status service (sibling) reads what this writes
-      - /opt/redteam/evals:/app/evals
+      # Scoped bind-mounts: only the writable output dirs are persisted
+      # from host. Seeds + criteria stay from the image's COPY (read-only
+      # at runtime; bind-mounting the whole evals/ tree would shadow them
+      # with an empty host directory).
+      #
+      # Host dirs must be owned by uid 1000 (the redteam user inside the
+      # container) — bootstrap.sh handles the chown before `compose up`.
+      - /opt/redteam/evals/results:/app/evals/results
+      - /opt/redteam/evals/vulnerabilities:/app/evals/vulnerabilities
 
     networks:
       # Default network for daemon ↔ status comms.
@@ -116,10 +120,11 @@ services:
       # Status app is read-only; no LLM keys or HMAC secret needed.
 
     volumes:
-      # Same evals mount as daemon — status READS what daemon WRITES.
-      # `:ro` (read-only) for defense in depth: even if status app is
-      # compromised, it can't corrupt the artifact tree.
-      - /opt/redteam/evals:/app/evals:ro
+      # Same scoped mounts as daemon, but :ro for defense in depth — even
+      # if the status app is compromised, it can't corrupt the artifact
+      # tree. Status reads results + vulnerabilities, never writes.
+      - /opt/redteam/evals/results:/app/evals/results:ro
+      - /opt/redteam/evals/vulnerabilities:/app/evals/vulnerabilities:ro
 
     networks:
       - redteam-internal
