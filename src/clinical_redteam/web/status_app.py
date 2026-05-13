@@ -772,7 +772,8 @@ _INDEX_TEMPLATE = """<!doctype html>
 <div class="sub">
   Deployed adversarial AI security platform attacking
   <a href="https://142-93-242-40.nip.io">https://142-93-242-40.nip.io</a>.
-  See <a href="https://github.com/TradeUpCards/clinical-redteam">GitHub</a>
+  See <a href="https://labs.gauntletai.com/coryvandenberg/clinical-redteam">GitLab</a>
+  (primary) or the <a href="https://github.com/TradeUpCards/clinical-redteam">GitHub mirror</a>
   for source + architecture.
 </div>
 
