@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -763,6 +764,22 @@ _INDEX_TEMPLATE = """<!doctype html>
   .verdict-cell { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px;
     color: var(--muted); white-space: nowrap; }
   .verdict-cell strong { color: var(--ink); }
+  .refresh-bar { display: flex; flex-wrap: wrap; align-items: center;
+    gap: 10px 16px; background: white; border: 1px solid var(--line);
+    border-radius: 5px; padding: 10px 14px; margin: 0 0 20px;
+    font-size: 12px; color: var(--muted); }
+  .refresh-bar .group { display: inline-flex; align-items: center; gap: 6px; }
+  .refresh-bar label { color: var(--muted); }
+  .refresh-bar select { font: inherit; color: var(--ink); background: white;
+    border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
+  .refresh-bar button { font: inherit; color: var(--ink); background: white;
+    border: 1px solid var(--line); border-radius: 4px; padding: 3px 10px;
+    cursor: pointer; }
+  .refresh-bar button:hover { background: #f3f3ef; }
+  .refresh-bar .meta { color: var(--muted); margin-left: auto;
+    font-variant-numeric: tabular-nums; }
+  .refresh-bar .countdown { color: var(--ink); font-weight: 500; }
+  .refresh-bar .countdown.paused { color: var(--muted); font-weight: 400; }
 </style>
 </head>
 <body>
@@ -775,6 +792,26 @@ _INDEX_TEMPLATE = """<!doctype html>
   See <a href="https://labs.gauntletai.com/coryvandenberg/clinical-redteam">GitLab</a>
   (primary) or the <a href="https://github.com/TradeUpCards/clinical-redteam">GitHub mirror</a>
   for source + architecture.
+</div>
+
+<div class="refresh-bar" id="refresh-bar" role="region" aria-label="Page refresh controls">
+  <div class="group">
+    <label for="refresh-interval">Auto-refresh:</label>
+    <select id="refresh-interval" aria-label="Auto-refresh interval">
+      <option value="0">Off</option>
+      <option value="10">Every 10 s</option>
+      <option value="30">Every 30 s</option>
+      <option value="60">Every 60 s</option>
+      <option value="300">Every 5 min</option>
+    </select>
+  </div>
+  <div class="group">
+    <button type="button" id="refresh-now">Refresh now</button>
+  </div>
+  <div class="meta">
+    <span>Loaded <time datetime="{{ rendered_at_iso }}">{{ rendered_at_display }}</time> UTC</span>
+    <span id="refresh-countdown" class="countdown paused" aria-live="polite"></span>
+  </div>
 </div>
 
 {% if trends.run_count > 0 %}
@@ -898,6 +935,105 @@ _INDEX_TEMPLATE = """<!doctype html>
 </div>
 
 </div>
+
+<script>
+/* Refresh controls — read-only.
+ *
+ * Only side effect is location.reload(); no fetch / XHR / form submit / state
+ * mutation. Choice persisted in localStorage so the picker survives the
+ * reload it triggers. Auto-refresh pauses when the tab is hidden so a
+ * backgrounded window doesn't burn battery or thrash the server.
+ *
+ * Defaults to "Off" — a public status page should not yank state from
+ * under a reader who didn't ask for it.
+ */
+(function () {
+  var STORAGE_KEY = "crt-status-refresh-seconds";
+  var sel = document.getElementById("refresh-interval");
+  var btn = document.getElementById("refresh-now");
+  var countdown = document.getElementById("refresh-countdown");
+  if (!sel || !btn || !countdown) return;
+
+  function readStored() {
+    try {
+      var v = parseInt(window.localStorage.getItem(STORAGE_KEY) || "0", 10);
+      return isNaN(v) || v < 0 ? 0 : v;
+    } catch (e) { return 0; }
+  }
+  function writeStored(v) {
+    try { window.localStorage.setItem(STORAGE_KEY, String(v)); } catch (e) {}
+  }
+
+  var seconds = readStored();
+  // Snap stored value to an offered option, falling back to 0.
+  var allowed = Array.prototype.map.call(sel.options, function (o) {
+    return parseInt(o.value, 10);
+  });
+  if (allowed.indexOf(seconds) === -1) seconds = 0;
+  sel.value = String(seconds);
+
+  var remaining = seconds;
+  var tickHandle = null;
+
+  function render() {
+    if (seconds === 0) {
+      countdown.textContent = "(auto-refresh off)";
+      countdown.classList.add("paused");
+    } else if (document.hidden) {
+      countdown.textContent = "(paused — tab hidden)";
+      countdown.classList.add("paused");
+    } else {
+      countdown.textContent = "next refresh in " + remaining + " s";
+      countdown.classList.remove("paused");
+    }
+  }
+
+  function stop() {
+    if (tickHandle !== null) {
+      window.clearInterval(tickHandle);
+      tickHandle = null;
+    }
+  }
+
+  function start() {
+    stop();
+    if (seconds === 0 || document.hidden) { render(); return; }
+    remaining = seconds;
+    render();
+    tickHandle = window.setInterval(function () {
+      remaining -= 1;
+      if (remaining <= 0) {
+        stop();
+        window.location.reload();
+        return;
+      }
+      render();
+    }, 1000);
+  }
+
+  sel.addEventListener("change", function () {
+    seconds = parseInt(sel.value, 10) || 0;
+    writeStored(seconds);
+    start();
+  });
+
+  btn.addEventListener("click", function () {
+    window.location.reload();
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      stop();
+      render();
+    } else {
+      start();
+    }
+  });
+
+  start();
+})();
+</script>
+
 </body>
 </html>
 """
@@ -932,6 +1068,10 @@ def create_app() -> Flask:
           * `_TREND_RUNS_LIMIT`  (50) — chronological aggregation window
         The trend scope is wider on purpose: more history = more credible
         trend lines, but capped to keep response time bounded.
+
+        Server-renders a `rendered_at` timestamp so the page header can
+        show data freshness; the refresh-controls JS uses location.reload
+        to fetch a new copy when the user opts in to auto-refresh.
         """
         runs = [_run_summary(d) for d in _list_run_dirs()]
         trend_dirs = _list_run_dirs(limit=_TREND_RUNS_LIMIT)
@@ -945,6 +1085,7 @@ def create_app() -> Flask:
         )
         cost_chart_svg = _svg_cost_lines(trends["cost_series"])
         vulns = _list_vulnerabilities()
+        rendered_at = datetime.now(UTC).replace(microsecond=0)
         return render_template_string(
             _INDEX_TEMPLATE,
             runs=runs,
@@ -954,6 +1095,8 @@ def create_app() -> Flask:
             verdict_chart_svg=verdict_chart_svg,
             coverage_chart_svg=coverage_chart_svg,
             cost_chart_svg=cost_chart_svg,
+            rendered_at_iso=rendered_at.isoformat(),
+            rendered_at_display=rendered_at.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
     @app.route("/api/status")
