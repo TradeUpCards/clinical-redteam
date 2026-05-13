@@ -1,4 +1,4 @@
-"""Orchestrator Agent (ARCH §2.3, §3.6.1, §10.2).
+"""Orchestrator Agent (ARCH §2.3, §3.6.1, §10.2; F7 target-change replay).
 
 The continuous-mode daemon. A pure-Python `while not halt:` loop that:
 
@@ -35,14 +35,18 @@ Out of scope (deferred):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from clinical_redteam.agents.documentation import (
     DocumentationAgent,
@@ -60,6 +64,7 @@ from clinical_redteam.agents.red_team import (
     RedTeamAgent,
     load_seed,
 )
+from clinical_redteam.content_filter import evaluate_attack
 from clinical_redteam.cost_ledger import (
     CostCapExceededError,
     CostLedger,
@@ -72,6 +77,7 @@ from clinical_redteam.schemas import (
     AttackCandidate,
     Category,
     JudgeVerdict,
+    Payload,
 )
 from clinical_redteam.target_client import (
     HmacRejectedError,
@@ -120,6 +126,47 @@ DEFAULT_PER_ITERATION_BUDGET_USD = 0.50
 """Projected next-iteration cost used by halt-check to predict cap-breach.
 Conservative enough to cover one Red Team + one Judge + one Documentation
 call at frontier-model rates."""
+
+REGRESSION_SUBDIR_BY_CATEGORY: dict[Category, str] = {
+    "sensitive_information_disclosure": "sensitive_information_disclosure",
+    "prompt_injection": "prompt_injection",
+    "unbounded_consumption": "unbounded_consumption",
+}
+"""F7 — directory layout under `evals/regression/` for replay cases."""
+
+_DEFAULT_REPLAY_PID = 999100
+"""Fallback sentinel PID for replay when the case YAML omits it. Matches
+VULN-001's primary_patient_id; safe in-range per content-filter rules."""
+
+
+def _new_replay_attack_id(sequence: int) -> str:
+    """attack_id for F7 regression replay.
+
+    The AttackCandidate schema regex `^atk_\\d{4}-\\d{2}-\\d{2}_\\d{3,}$`
+    is shared between Red Team and replay; we cannot use a different
+    prefix without a schema change. To prevent the sequence-namespace
+    collision flagged by the F7 audit (M1 — `_next_sequence` reads only
+    `attack_ids` but replay attacks land in `regression_replay_attack_ids`,
+    so both pools start at sequence=1 → identical attack_ids in different
+    subdirs), replay sequences live above 900 to avoid the main-loop range.
+    A run that produces 900+ main-loop attacks AND fires regression replay
+    in the same run-dir is unlikely in MVP but would still write to a
+    separate file path (`regression_replay/attacks/`), so any collision
+    would be inert at the persistence layer.
+    """
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    return f"atk_{today}_{sequence:03d}"
+
+_REGRESSION_REQUIRED_KEYS = {
+    "case_id",
+    "parent_vuln_id",
+    "category",
+    "target_endpoint",
+    "attack_payload",
+}
+"""Minimum keys a regression-case YAML must carry. Mirrors the
+`RegressionCase` Pydantic schema (ARCH §12.5 / schemas.py:RegressionCase),
+without forcing every optional field present."""
 
 
 # Canonical seed for each category — same source-of-truth as run.py uses;
@@ -541,11 +588,27 @@ class OrchestratorDaemon:
     _target_unavailable_count: int = field(init=False, default=0)
     _provider_outage_count: int = field(init=False, default=0)
     _attacks_attempted: int = field(init=False, default=0)
+    # F7 — target-change regression
+    _target_fingerprint: str = field(init=False, default="")
+    _previous_target_fingerprint: str | None = field(init=False, default=None)
+    _fingerprint_changed: bool = field(init=False, default=False)
+    _regression_replays_run: int = field(init=False, default=0)
 
     def __post_init__(self) -> None:
         self.signal_window = RecentSignalWindow(self.config.recent_k)
         self._seed_id_by_category: dict[Category, str | None] = (
             self._discover_seed_ids()
+        )
+        # F7: compute current target fingerprint, persist to manifest, and
+        # detect whether it has changed since the most recent sibling run.
+        # Sibling lookup happens BEFORE we touch this run's manifest so the
+        # current run's fingerprint can't masquerade as its own predecessor.
+        self._previous_target_fingerprint = self._most_recent_sibling_fingerprint()
+        self._target_fingerprint = self._compute_target_fingerprint()
+        self.handle.update_target_fingerprint(self._target_fingerprint)
+        self._fingerprint_changed = self._evaluate_fingerprint_change(
+            previous=self._previous_target_fingerprint,
+            current=self._target_fingerprint,
         )
         # A4: rehydrate signal_window from on-disk verdicts so a resumed
         # daemon's halt evaluation reflects the prior session's signal.
@@ -572,6 +635,20 @@ class OrchestratorDaemon:
         / coverage floor / interrupt). Tests pass a small integer to bound the
         loop deterministically.
         """
+        # F7: if the target fingerprint changed since the previous run,
+        # replay every regression case BEFORE normal coverage selection.
+        # Replay traffic is stored in a separate run-dir subtree so the
+        # main loop's halt/select_category logic is not affected.
+        if self._fingerprint_changed:
+            try:
+                self._run_regression_replay()
+            except Exception:  # noqa: BLE001
+                # Replay failure must not crash the daemon — the operator
+                # may still want the normal run. Log loudly and continue.
+                logger.exception(
+                    "Regression replay raised; continuing with main loop"
+                )
+
         iteration = 0
         try:
             while True:
@@ -914,6 +991,23 @@ class OrchestratorDaemon:
         manifest = self.handle.load_manifest()
         return len(manifest.get("attack_ids", [])) + 1
 
+    _REPLAY_SEQUENCE_OFFSET = 900
+    """F7 — replay attack/verdict IDs use sequences offset above the
+    main-loop range to avoid `atk_<date>_<seq>` collisions when the same
+    integer would otherwise be allocated to both pools. 900 leaves room for
+    899 main-loop attacks per run, which is well beyond MVP coverage floors."""
+
+    def _next_replay_sequence(self) -> int:
+        """Sequence number for F7 regression-replay attack/verdict IDs.
+
+        Derives from `len(manifest['regression_replay_attack_ids']) + 1 +
+        _REPLAY_SEQUENCE_OFFSET` so replay IDs occupy a disjoint integer
+        range from main-loop IDs (audit M1 fix).
+        """
+        manifest = self.handle.load_manifest()
+        idx = len(manifest.get("regression_replay_attack_ids", []))
+        return idx + 1 + self._REPLAY_SEQUENCE_OFFSET
+
     def _open_findings_index(self) -> dict[Category, list[str]]:
         """Map each category → list of FAIL attack_ids not yet replayed.
 
@@ -1138,6 +1232,287 @@ class OrchestratorDaemon:
             self.config.on_iteration(line)
         else:
             logger.info("iteration %d: %s", iteration, line)
+
+    # ------------------------------------------------------------------ F7
+
+    def _compute_target_fingerprint(self) -> str:
+        """Compute the current target fingerprint via TargetClient.
+
+        Wraps the call so a TargetClient missing the method (e.g., a fake
+        in older tests) degrades gracefully to "unreachable" — keeps
+        backwards-compat through the F7 transition.
+        """
+        getter = getattr(self.target, "health_fingerprint", None)
+        if getter is None:
+            return "unreachable"
+        try:
+            return getter()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Target health_fingerprint() raised; treating as 'unreachable'"
+            )
+            return "unreachable"
+
+    def _most_recent_sibling_fingerprint(self) -> str | None:
+        """Return the `target_fingerprint` of the most recently-updated
+        sibling run-dir, or None if no prior run exists.
+
+        Sibling = a different run_id under the same `results_dir` parent.
+        "Most recent" is by manifest's `last_updated_at` timestamp; ties
+        break by directory name lexically. Unreadable manifests are skipped.
+        """
+        results_dir = self.handle.run_dir.parent
+        if not results_dir.exists():
+            return None
+        candidates: list[tuple[str, str, str | None]] = []
+        for sibling in results_dir.iterdir():
+            if not sibling.is_dir():
+                continue
+            if sibling.resolve() == self.handle.run_dir.resolve():
+                continue
+            manifest_path = sibling / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            try:
+                with manifest_path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, ValueError):
+                continue
+            # TODO(F7-L3, deferred per audit): also filter by matching
+            # `target_url == self.target.base_url` so a fresh deployment
+            # against a NEW target doesn't trigger replay against the
+            # previous deployment's fingerprint. Conservative as-is
+            # (false-positive replay, never missed replay).
+            last_updated = str(data.get("last_updated_at") or "")
+            candidates.append((last_updated, sibling.name, data.get("target_fingerprint")))
+        if not candidates:
+            return None
+        candidates.sort()  # ascending; we want the last one
+        return candidates[-1][2]
+
+    @staticmethod
+    def _evaluate_fingerprint_change(
+        *, previous: str | None, current: str
+    ) -> bool:
+        """Return True iff `current` should trigger regression replay.
+
+        Rules:
+        - No previous run → no change (first run is its own baseline).
+        - previous == current → no change.
+        - `unreachable` → `unreachable` → no change (sustained outage).
+        - Anything else (including reachable → unreachable transitions and
+          fingerprint deltas) → change.
+        """
+        if previous is None:
+            return False
+        if previous == current:
+            return False
+        return True
+
+    def _run_regression_replay(self) -> None:
+        """F7 — replay every committed regression case against the new target.
+
+        Stores attacks/verdicts in `regression_replay/` so the normal loop's
+        coverage + halt logic isn't perturbed. Each replay span is tagged
+        `regression_replay=true` for the dashboard.
+
+        Errors in any single case are isolated — a misformatted YAML or a
+        target outage for one case does not abort the rest.
+        """
+        regression_root = self.config.evals_dir / "regression"
+        if not regression_root.exists():
+            logger.info(
+                "F7: no evals/regression/ directory at %s — nothing to replay",
+                regression_root,
+            )
+            return
+
+        cases = self._load_regression_cases(regression_root)
+        if not cases:
+            logger.info(
+                "F7: regression directory has no usable cases under %s",
+                regression_root,
+            )
+            return
+
+        logger.info(
+            "F7: target fingerprint changed (%r → %r); replaying %d "
+            "regression case(s) before normal loop",
+            self._previous_target_fingerprint,
+            self._target_fingerprint,
+            len(cases),
+        )
+
+        for case in cases:
+            # Audit H1 fix: cost-cap guard. `evaluate_halt` runs only inside
+            # the main loop, not during replay; without this check a long
+            # regression file list could blow the cap before the main loop
+            # ever gets to halt. Per-iteration projection budget mirrors the
+            # main loop's halt logic (orchestrator.py:324).
+            if self.ledger.would_exceed_cap(
+                self.config.per_iteration_cost_budget_usd
+            ):
+                logger.warning(
+                    "F7: replay halted at %d/%d cases — projected cost cap "
+                    "breach (cost=%.4f, cap=%.4f)",
+                    self._regression_replays_run, len(cases),
+                    self.ledger.total_usd, self.ledger.cost_cap_usd,
+                )
+                break
+            try:
+                self._replay_one_case(case)
+                self._regression_replays_run += 1
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "F7: replay failed for case %s — continuing",
+                    case.get("case_id", "<unknown>"),
+                )
+
+    def _load_regression_cases(self, root: Path) -> list[dict[str, Any]]:
+        """Walk `root/<category>/*.yaml`; return validated case dicts."""
+        cases: list[dict[str, Any]] = []
+        for subdir in REGRESSION_SUBDIR_BY_CATEGORY.values():
+            cat_dir = root / subdir
+            if not cat_dir.exists():
+                continue
+            for case_path in sorted(cat_dir.glob("*.yaml")):
+                try:
+                    with case_path.open("r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f)
+                except (OSError, yaml.YAMLError) as exc:
+                    logger.warning(
+                        "F7: skipping unreadable regression file %s (%s)",
+                        case_path, exc,
+                    )
+                    continue
+                if not isinstance(data, dict):
+                    logger.warning(
+                        "F7: %s is not a mapping; skipping", case_path
+                    )
+                    continue
+                missing = _REGRESSION_REQUIRED_KEYS - set(data.keys())
+                if missing:
+                    logger.warning(
+                        "F7: regression case %s missing keys %s; skipping",
+                        case_path, sorted(missing),
+                    )
+                    continue
+                cases.append(data)
+        return cases
+
+    def _replay_one_case(self, case: dict[str, Any]) -> None:
+        """Send one regression-case attack through target + judge + persist."""
+        category: Category = case["category"]  # type: ignore[assignment]
+        if category not in REGRESSION_SUBDIR_BY_CATEGORY:
+            logger.warning(
+                "F7: regression case %s has unknown category %r — skipping",
+                case.get("case_id"), category,
+            )
+            return
+
+        # Audit M1 fix: replay sequences live in a NAMESPACE DISJOINT from
+        # main-loop sequences so attack_ids never collide. Main loop's
+        # `_next_sequence` reads `attack_ids` (range 1..N), replay uses
+        # `regression_replay_attack_ids` + a fixed offset so the resulting
+        # `atk_<date>_<seq>` differs from any main-loop attack on the same
+        # day. Schema regex `^atk_\d{4}-\d{2}-\d{2}_\d{3,}$` still satisfied.
+        sequence = self._next_replay_sequence()
+        attack_payload = str(case["attack_payload"]).strip()
+        case_id = case["case_id"]
+
+        attack = AttackCandidate(
+            attack_id=_new_replay_attack_id(sequence),
+            category=category,
+            subcategory=str(case.get("subcategory", "regression_replay")),
+            owasp_id=str(case.get("owasp_id", "unknown")),
+            asi_id=case.get("asi_id"),
+            atlas_technique_id=case.get("atlas_technique_id"),
+            target_endpoint=str(case["target_endpoint"]),
+            payload=Payload(type="single_turn", content=attack_payload),
+            mutation_parent=None,  # NOT a mutation — verbatim replay
+            mutation_depth=0,
+            generated_by=f"regression_replay::{case_id}",
+            generated_at=datetime.now(UTC),
+            model_used="regression-verbatim",
+            cost_usd=0.0,
+        )
+
+        # Audit L2 fix: even though replay YAMLs are committed/reviewed
+        # content, the hard rule (kickoff §"Hard rules") is that EVERY
+        # AttackCandidate passes the content filter BEFORE any external
+        # call. Mirror the Red Team path's pre-flight evaluation here so
+        # that invariant holds for replay too.
+        decision = evaluate_attack(attack)
+        if not decision.allowed:
+            logger.warning(
+                "F7: regression replay case %s refused by content filter: "
+                "%s (label=%s)",
+                case_id, decision.refusal_reason, decision.matched_pattern_label,
+            )
+            return
+
+        # Persist BEFORE target call so a crash mid-call doesn't lose the
+        # attack record (mirrors the normal-loop ordering invariant).
+        self.handle.save_regression_replay_attack(attack)
+
+        primary_pid = int(case.get("primary_patient_id") or _DEFAULT_REPLAY_PID)
+        try:
+            with self.obs.agent_span(
+                agent_name="target_client",
+                agent_version="v0.1.0",
+                agent_role="regression_replay_target_call",
+                attack_id=attack.attack_id,
+                category=category,
+                inputs={
+                    "regression_replay": True,
+                    "case_id": case_id,
+                    "parent_vuln_id": case.get("parent_vuln_id"),
+                    "endpoint": attack.target_endpoint,
+                },
+            ) as tc_span:
+                response = self.target.chat(
+                    messages=[Message(role="user", content=attack_payload)],
+                    patient_id=primary_pid,
+                    session_id=self.session_id,
+                )
+                tc_span.update(
+                    output={"status_code": response.status_code}
+                )
+        except (HmacRejectedError, TargetUnavailableError) as exc:
+            # Don't escalate to the halt path during replay — replay is a
+            # best-effort probe, not the main loop.
+            logger.warning(
+                "F7: regression replay for case %s aborted: %s",
+                case_id, exc,
+            )
+            return
+
+        with self.obs.agent_span(
+            agent_name="judge",
+            agent_version="v0.1.0",
+            agent_role="regression_replay_verdict",
+            attack_id=attack.attack_id,
+            category=category,
+            inputs={
+                "regression_replay": True,
+                "case_id": case_id,
+                "target_status": response.status_code,
+            },
+        ) as j_span:
+            verdict = self.judge.evaluate(
+                attack=attack,
+                target_response_text=response.assistant_text,
+                sequence=sequence,
+                evals_dir=self.config.evals_dir,
+            )
+            j_span.update(
+                output={
+                    "verdict_id": verdict.verdict_id,
+                    "verdict": verdict.verdict,
+                    "regression_replay": True,
+                }
+            )
+        self.handle.save_regression_replay_verdict(verdict)
 
     def _finalize(self, reason: HaltReason, iteration: int) -> HaltReport:
         report = HaltReport(

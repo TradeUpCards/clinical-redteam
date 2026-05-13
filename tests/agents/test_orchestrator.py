@@ -211,6 +211,7 @@ class _FakeTarget:
 
     raise_on_call: Exception | None = None
     response_text: str = "fake response"
+    fingerprint: str = "sha256:fake0000000000aa"
 
     def chat(self, *, messages: list[Message], patient_id: int, session_id: str) -> TargetResponse:
         if self.raise_on_call is not None:
@@ -223,6 +224,10 @@ class _FakeTarget:
             request_id="req-fake",
             trace_id="trace-fake",
         )
+
+    def health_fingerprint(self) -> str:
+        """F7 — daemon calls this on __post_init__ to detect target change."""
+        return self.fingerprint
 
 
 # ---------------------------------------------------------------------------
@@ -1066,3 +1071,333 @@ def test_default_seeds_mapping_matches_run_module() -> None:
     # they must agree on the entries they share.
     for cat, seed in RUN_DEFAULTS.items():
         assert DEFAULT_SEEDS_BY_CATEGORY.get(cat) == seed
+
+
+# ---------------------------------------------------------------------------
+# F7 — target-change regression replay
+# ---------------------------------------------------------------------------
+
+
+def test_daemon_writes_target_fingerprint_to_manifest(tmp_path: Path) -> None:
+    """At construction, daemon persists the current target fingerprint."""
+    target = _FakeTarget(fingerprint="sha256:abc123def4567890")
+    daemon = _build_daemon(tmp_path, target=target)
+    manifest = daemon.handle.load_manifest()
+    assert manifest["target_fingerprint"] == "sha256:abc123def4567890"
+    assert daemon._target_fingerprint == "sha256:abc123def4567890"
+
+
+def test_daemon_fingerprint_unchanged_when_no_prior_run(tmp_path: Path) -> None:
+    """First run → no prior fingerprint → fingerprint_changed=False, no replay."""
+    daemon = _build_daemon(tmp_path)
+    assert daemon._previous_target_fingerprint is None
+    assert daemon._fingerprint_changed is False
+    # Run loop completes; no regression replay attempts recorded
+    daemon.run_until_halt(max_iterations=1)
+    assert daemon._regression_replays_run == 0
+
+
+def test_daemon_fingerprint_unchanged_skips_replay(tmp_path: Path) -> None:
+    """Same fingerprint between runs → no replay fires."""
+    results_dir = tmp_path / "results"
+    # First run
+    h1 = start_run(
+        run_id="run-001",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    h1.update_target_fingerprint("sha256:samesame12345678")
+
+    # Second daemon starts; same target fingerprint
+    target = _FakeTarget(fingerprint="sha256:samesame12345678")
+    handle2 = start_run(
+        run_id="run-002",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    coverage = CoverageTracker.create(
+        run_dir=handle2.run_dir,
+        target_version_sha="x",
+        cost_cap_usd=5.0,
+    )
+    ledger = CostLedger.create(run_dir=handle2.run_dir, cost_cap_usd=5.0)
+    obs = Observability.from_env(session_id="run-002", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=target,
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle2,
+        obs=obs,
+        config=config,
+        session_id="run-002",
+    )
+    assert daemon._previous_target_fingerprint == "sha256:samesame12345678"
+    assert daemon._fingerprint_changed is False
+
+
+def test_daemon_fingerprint_changed_triggers_replay(tmp_path: Path) -> None:
+    """Fingerprint delta → regression replay fires for every committed case."""
+    results_dir = tmp_path / "results"
+    # Seed a prior run with a different fingerprint
+    h1 = start_run(
+        run_id="run-001",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    h1.update_target_fingerprint("sha256:oldoldoldoldoldol")
+
+    # New target fingerprint
+    target = _FakeTarget(fingerprint="sha256:newnewnewnewnewne")
+    handle2 = start_run(
+        run_id="run-002",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    coverage = CoverageTracker.create(
+        run_dir=handle2.run_dir,
+        target_version_sha="x",
+        cost_cap_usd=5.0,
+    )
+    ledger = CostLedger.create(run_dir=handle2.run_dir, cost_cap_usd=5.0)
+    obs = Observability.from_env(session_id="run-002", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,  # repo has evals/regression/sid/REGR-001.yaml
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(verdicts=[("pass", 0.001)]),
+        documentation=_FakeDocumentation(),
+        target=target,
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle2,
+        obs=obs,
+        config=config,
+        session_id="run-002",
+    )
+    assert daemon._previous_target_fingerprint == "sha256:oldoldoldoldoldol"
+    assert daemon._fingerprint_changed is True
+
+    daemon.run_until_halt(max_iterations=0)  # only the replay should fire
+
+    # Replay artifacts exist
+    assert daemon._regression_replays_run >= 1
+    manifest = handle2.load_manifest()
+    assert len(manifest.get("regression_replay_attack_ids", [])) >= 1
+    assert len(manifest.get("regression_replay_verdict_ids", [])) >= 1
+
+    # Replay outputs land in regression_replay/ — NOT in attacks/ + verdicts/
+    main_attacks = list(handle2.attacks_dir.glob("*.json"))
+    replay_attacks = list(handle2.regression_replay_attacks_dir.glob("*.json"))
+    assert len(replay_attacks) >= 1
+    # max_iterations=0 means the main loop wouldn't actually run; this
+    # assertion guards that regression replay does NOT contaminate the
+    # main `attacks/` directory.
+    assert all("regression_replay" not in str(p) for p in main_attacks)
+
+
+def test_evaluate_fingerprint_change_no_previous_is_no_change() -> None:
+    assert (
+        OrchestratorDaemon._evaluate_fingerprint_change(
+            previous=None, current="sha256:abc"
+        )
+        is False
+    )
+
+
+def test_evaluate_fingerprint_change_unreachable_pair_is_no_change() -> None:
+    assert (
+        OrchestratorDaemon._evaluate_fingerprint_change(
+            previous="unreachable", current="unreachable"
+        )
+        is False
+    )
+
+
+def test_evaluate_fingerprint_change_real_delta_triggers() -> None:
+    assert (
+        OrchestratorDaemon._evaluate_fingerprint_change(
+            previous="sha256:aaa", current="sha256:bbb"
+        )
+        is True
+    )
+    # transition out of unreachable also counts as change
+    assert (
+        OrchestratorDaemon._evaluate_fingerprint_change(
+            previous="unreachable", current="sha256:abc"
+        )
+        is True
+    )
+    assert (
+        OrchestratorDaemon._evaluate_fingerprint_change(
+            previous="sha256:abc", current="unreachable"
+        )
+        is True
+    )
+
+
+def test_regression_replay_with_no_regression_dir_is_no_op(tmp_path: Path) -> None:
+    """No `evals/regression/` directory → replay logs and returns cleanly."""
+    target = _FakeTarget(fingerprint="sha256:newaaaaaaaaaaaaaa")
+    # Seed prior fingerprint
+    results_dir = tmp_path / "results"
+    h1 = start_run(
+        run_id="run-001",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    h1.update_target_fingerprint("sha256:oldaaaaaaaaaaaaaa")
+
+    handle2 = start_run(
+        run_id="run-002",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    coverage = CoverageTracker.create(
+        run_dir=handle2.run_dir,
+        target_version_sha="x",
+        cost_cap_usd=5.0,
+    )
+    ledger = CostLedger.create(run_dir=handle2.run_dir, cost_cap_usd=5.0)
+    obs = Observability.from_env(session_id="run-002", env={})  # type: ignore[arg-type]
+    # Point evals_dir at an empty tmp tree → no `regression/` subdir
+    empty_evals = tmp_path / "empty_evals"
+    (empty_evals / "seed").mkdir(parents=True)
+    config = OrchestratorConfig(
+        evals_dir=empty_evals,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=target,
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle2,
+        obs=obs,
+        config=config,
+        session_id="run-002",
+    )
+    assert daemon._fingerprint_changed is True
+    daemon.run_until_halt(max_iterations=0)
+    assert daemon._regression_replays_run == 0
+
+
+def test_replay_records_regression_subtree_not_main_dirs(tmp_path: Path) -> None:
+    """Replay attacks/verdicts land ONLY under regression_replay/ — the
+    main coverage/halt/select_category logic must not see them."""
+    results_dir = tmp_path / "results"
+    h1 = start_run(
+        run_id="run-001",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    h1.update_target_fingerprint("sha256:oldoldoldoldoldol")
+    target = _FakeTarget(fingerprint="sha256:newnewnewnewnewne")
+    handle2 = start_run(
+        run_id="run-002",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    coverage = CoverageTracker.create(
+        run_dir=handle2.run_dir,
+        target_version_sha="x",
+        cost_cap_usd=5.0,
+    )
+    ledger = CostLedger.create(run_dir=handle2.run_dir, cost_cap_usd=5.0)
+    obs = Observability.from_env(session_id="run-002", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=target,
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle2,
+        obs=obs,
+        config=config,
+        session_id="run-002",
+    )
+    daemon.run_until_halt(max_iterations=0)
+
+    # Coverage state should NOT reflect any replay attacks
+    state = coverage.to_state(session_cost_usd=ledger.total_usd)
+    for cat_cov in state.categories.values():
+        assert cat_cov.attack_count == 0
+
+
+def test_replay_continues_after_one_case_fails(tmp_path: Path) -> None:
+    """A target outage on one replay case must not stop the rest of replay."""
+    # Make target raise on chat() but still report fingerprint
+    target = _FakeTarget(
+        fingerprint="sha256:newnewnewnewnewne",
+        raise_on_call=TargetUnavailableError("simulated outage"),
+    )
+
+    results_dir = tmp_path / "results"
+    h1 = start_run(
+        run_id="run-001",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    h1.update_target_fingerprint("sha256:oldoldoldoldoldol")
+    handle2 = start_run(
+        run_id="run-002",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    coverage = CoverageTracker.create(
+        run_dir=handle2.run_dir,
+        target_version_sha="x",
+        cost_cap_usd=5.0,
+    )
+    ledger = CostLedger.create(run_dir=handle2.run_dir, cost_cap_usd=5.0)
+    obs = Observability.from_env(session_id="run-002", env={})  # type: ignore[arg-type]
+    config = OrchestratorConfig(
+        evals_dir=REPO_EVALS,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    daemon = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(),
+        documentation=_FakeDocumentation(),
+        target=target,
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle2,
+        obs=obs,
+        config=config,
+        session_id="run-002",
+    )
+    daemon.run_until_halt(max_iterations=0)
+    # _regression_replays_run only increments on successful completion, but
+    # `_replay_one_case` returns cleanly (no raise) on TargetUnavailableError.
+    # The attack file is still saved (pre-target-call write).
+    replay_attacks = list(handle2.regression_replay_attacks_dir.glob("*.json"))
+    assert len(replay_attacks) >= 1
+    # No verdict file because the target call failed
+    replay_verdicts = list(handle2.regression_replay_verdicts_dir.glob("*.json"))
+    assert replay_verdicts == []
