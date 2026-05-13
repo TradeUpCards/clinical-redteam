@@ -255,7 +255,7 @@ sudo bash .deploy/bootstrap.sh
 The bootstrap is **idempotent** — safe to re-run. On first run it:
 
 1. Generates `/opt/redteam/.env` with the W2 HMAC secret already wired (pulled from `/opt/agentforge/.env`) — only `OPENROUTER_API_KEY` needs manual entry
-2. Writes `/opt/redteam/docker-compose.yml` from the template at `.deploy/docker-compose.redteam.yml`
+2. Writes `/opt/redteam/repo/.deploy/docker-compose.redteam.yml` from the template at `.deploy/docker-compose.redteam.yml`
 3. Patches `/opt/agentforge/Caddyfile` to add the `redteam-142-93-242-40.nip.io` server block (managed-block markers keep the patch idempotent)
 4. Reloads Caddy in the W2 stack so the new TLS cert provisions on first request
 5. Builds the attacker image (~2-3 min on first build)
@@ -273,17 +273,17 @@ sudo bash /opt/redteam/repo/.deploy/bootstrap.sh   # re-run is safe
 The daemon starts attacking the moment the key is set. Monitor cost via the status URL (`https://redteam-142-93-242-40.nip.io`) or:
 
 ```bash
-docker compose -f /opt/redteam/docker-compose.yml logs -f redteam-daemon
+docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml logs -f redteam-daemon
 ```
 
 ### Operational commands
 
 | Action | Command |
 |---|---|
-| Daemon logs | `docker compose -f /opt/redteam/docker-compose.yml logs -f redteam-daemon` |
-| Status logs | `docker compose -f /opt/redteam/docker-compose.yml logs -f redteam-status` |
-| Stop daemon (status stays up) | `docker compose -f /opt/redteam/docker-compose.yml stop redteam-daemon` |
-| Resume daemon | `docker compose -f /opt/redteam/docker-compose.yml start redteam-daemon` |
+| Daemon logs | `docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml logs -f redteam-daemon` |
+| Status logs | `docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml logs -f redteam-status` |
+| Stop daemon (status stays up) | `docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml stop redteam-daemon` |
+| Resume daemon | `docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml start redteam-daemon` |
 | Update from main | `cd /opt/redteam/repo && git pull && sudo bash .deploy/bootstrap.sh` |
 | Smoke status URL | `curl -fsS https://redteam-142-93-242-40.nip.io/health` |
 

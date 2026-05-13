@@ -132,11 +132,19 @@ EOF
     log "    sudo nano ${DEPLOY_DIR}/.env"
 fi
 
-# 2. Copy compose file from repo into deploy dir.
-#    Compose lives in repo so it's tracked + reviewable; the deployed
-#    copy at /opt/redteam/ is what `docker compose -f ...` reads.
-log "Copying compose file"
-cp "${REPO_DIR}/.deploy/docker-compose.redteam.yml" "${DEPLOY_DIR}/docker-compose.yml"
+# 2. Compose file is referenced IN-PLACE from the repo.
+#    Earlier versions copied it to /opt/redteam/, but that broke the
+#    `context: ..` relative path in the compose file's build directive
+#    (`..` from /opt/redteam/ → /opt/, which doesn't have .deploy/Dockerfile).
+#    Keeping the compose file at $REPO_DIR/.deploy/ means `context: ..`
+#    resolves to $REPO_DIR — correct.
+#
+#    Remove any stale copy from a previous bootstrap run.
+if [[ -f "${COMPOSE_FILE}" ]]; then
+    log "Removing stale ${COMPOSE_FILE} (now referenced in-place from repo)"
+    rm -f "${COMPOSE_FILE}"
+fi
+COMPOSE_FILE="${REPO_DIR}/.deploy/docker-compose.redteam.yml"
 
 # 3. Patch W2's Caddyfile to add the attacker hostname.
 #    Idempotent — checks for the marker comment, only appends if absent.
@@ -168,19 +176,16 @@ docker compose -f "${W2_DEPLOY_DIR}/docker-compose.yml" exec -T caddy \
     || die "Caddy reload failed — check Caddyfile syntax: docker compose -f ${W2_DEPLOY_DIR}/docker-compose.yml exec caddy caddy validate --config /etc/caddy/Caddyfile"
 
 # 5. Build attacker image, bring up the stack.
-#    Build context = repo dir (where the Dockerfile + src/ live).
+#    Reference the compose file in-place from the repo. Default project
+#    directory becomes the compose file's directory ($REPO_DIR/.deploy/),
+#    so `context: ..` in the compose file correctly resolves to $REPO_DIR.
 log "Building attacker image (~2-3 min on first build)"
-cd "$DEPLOY_DIR"
-# Pass --project-directory so build context resolves correctly relative
-# to .deploy/Dockerfile in the repo.
-docker compose --project-directory "$REPO_DIR" \
-    -f "${DEPLOY_DIR}/docker-compose.yml" \
+docker compose -f "$COMPOSE_FILE" \
     --env-file "${DEPLOY_DIR}/.env" \
     build
 
 log "Starting attacker stack"
-docker compose --project-directory "$REPO_DIR" \
-    -f "${DEPLOY_DIR}/docker-compose.yml" \
+docker compose -f "$COMPOSE_FILE" \
     --env-file "${DEPLOY_DIR}/.env" \
     up -d
 
@@ -195,7 +200,7 @@ for i in $(seq 1 12); do
     fi
     if [[ $i -eq 12 ]]; then
         log "WARNING: status URL not responding after 60s. Check logs:"
-        log "    docker compose -f ${DEPLOY_DIR}/docker-compose.yml logs redteam-status"
+        log "    docker compose -f ${COMPOSE_FILE} logs redteam-status"
         log "    docker compose -f ${W2_DEPLOY_DIR}/docker-compose.yml logs caddy"
     fi
     sleep 5
@@ -212,11 +217,11 @@ Target URL (W2):     https://${PUBLIC_HOSTNAME}
 Attacker URL (W3):   https://${ATTACKER_HOSTNAME}
 
 Operational commands:
-  Daemon logs:   docker compose -f ${DEPLOY_DIR}/docker-compose.yml logs -f redteam-daemon
-  Status logs:   docker compose -f ${DEPLOY_DIR}/docker-compose.yml logs -f redteam-status
-  Daemon stop:   docker compose -f ${DEPLOY_DIR}/docker-compose.yml stop redteam-daemon
-  Daemon start:  docker compose -f ${DEPLOY_DIR}/docker-compose.yml start redteam-daemon
-  Full restart:  docker compose -f ${DEPLOY_DIR}/docker-compose.yml restart
+  Daemon logs:   docker compose -f ${COMPOSE_FILE} logs -f redteam-daemon
+  Status logs:   docker compose -f ${COMPOSE_FILE} logs -f redteam-status
+  Daemon stop:   docker compose -f ${COMPOSE_FILE} stop redteam-daemon
+  Daemon start:  docker compose -f ${COMPOSE_FILE} start redteam-daemon
+  Full restart:  docker compose -f ${COMPOSE_FILE} restart
 
 Update from local:
   cd ${REPO_DIR} && git pull
@@ -229,4 +234,4 @@ EOF
 # Tail the first few daemon log lines so the operator can see signs of
 # life without copy-pasting commands.
 log "First 30 lines of daemon log (Ctrl-C to stop tailing):"
-docker compose -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=30 redteam-daemon || true
+docker compose -f "${COMPOSE_FILE}" logs --tail=30 redteam-daemon || true
