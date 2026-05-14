@@ -70,6 +70,7 @@ from clinical_redteam.target_client import (
     Message,
     TargetClient,
     TargetUnavailableError,
+    dispatch_to_endpoint,
 )
 
 logger = logging.getLogger(__name__)
@@ -673,6 +674,10 @@ def _run_single_shot(args: argparse.Namespace) -> int:
     logger.info("attack saved: %s", candidate.attack_id)
 
     # -- Target call --
+    # F20: dispatch on candidate.target_endpoint so /attach_and_extract
+    # seeds (C-A) actually hit the extraction endpoint they declare,
+    # not /chat. Single source of truth lives in target_client.dispatch_to_endpoint
+    # so the daemon loop and this single-shot path can't drift.
     try:
         with obs.agent_span(
             agent_name="target_client",
@@ -682,10 +687,10 @@ def _run_single_shot(args: argparse.Namespace) -> int:
             category=args.category,
             inputs={"endpoint": target.base_url + candidate.target_endpoint},
         ) as tc_span:
-            response = target.chat(
-                messages=[
-                    Message(role="user", content=candidate.payload.content or "")
-                ],
+            response = dispatch_to_endpoint(
+                target,
+                target_endpoint=candidate.target_endpoint,
+                payload_content=candidate.payload.content or "",
                 patient_id=primary_pid,
                 session_id=run_id,
             )
@@ -695,6 +700,7 @@ def _run_single_shot(args: argparse.Namespace) -> int:
                     "request_id": response.request_id,
                     "trace_id": response.trace_id,
                     "assistant_text_len": len(response.assistant_text),
+                    "extraction_present": response.extraction is not None,
                 }
             )
     except HmacRejectedError as exc:
