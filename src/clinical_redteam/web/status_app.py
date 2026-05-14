@@ -4,12 +4,15 @@ Exposes a read-only HTTP surface that lets a grader (or operator) verify
 the platform is running, see recent runs, and read vulnerability reports.
 
 Endpoints:
-  GET  /                      HTML index — last 10 runs + vuln-report links
-  GET  /health                {"status":"ok"} — Caddy upstream + monitoring
-  GET  /api/status            Latest run's manifest summary
-  GET  /api/runs              List of recent run-ids with summary
-  GET  /api/runs/<run_id>     That run's manifest + cost ledger + coverage
-  GET  /api/vulnerabilities   List of VULN-NNN files with severity + status
+  GET  /                          HTML index — last N runs + vuln-report links
+  GET  /health                    {"status":"ok"} — Caddy upstream + monitoring
+  GET  /api/status                Latest run's manifest summary
+  GET  /api/runs                  List of recent run-ids with summary
+  GET  /api/runs/<run_id>         That run's manifest + cost ledger + coverage
+  GET  /api/vulnerabilities       VULN-NNN index with severity + status +
+                                  last regression-replay snapshot
+  GET  /api/regression-replays    Per-VULN snapshot of the most recent
+                                  F7 fingerprint-triggered replay outcome
 
 All endpoints read from disk under `EVALS_DIR` (default `./evals`). No
 mutation. No auth — only already-published artifacts surface here.
@@ -24,11 +27,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Any
 
+import yaml
 from flask import Flask, abort, jsonify, render_template_string
 
 logger = logging.getLogger(__name__)
@@ -170,57 +175,111 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
     }
 
 
-def _list_vulnerabilities() -> list[dict[str, Any]]:
+def _list_vulnerabilities(
+    replay_index: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Surface vuln-report files with parsed front-matter metadata.
 
-    The Documentation Agent writes VULN-NNN files following ARCH §12.4.
-    For the index we extract just severity + status + first-line title
-    so a grader can scan the list. Full markdown lands at /api/runs/<id>
-    if they want the whole report.
+    The Documentation Agent writes VULN-NNN files following ARCH §12.4 as
+    YAML frontmatter (between `---` markers) followed by markdown body.
+    For the index we extract the load-bearing identity (vuln_id, title,
+    severity, status) plus a "last regression replay" snapshot if the
+    caller provides a replay-index from `_aggregate_regression_replays`.
+
+    `replay_index` is keyed by vuln_id (e.g., "VULN-002") so identical
+    titles across drafts don't merge entries — vuln_id is the unique
+    handle.
     """
     root = _vulnerabilities_dir()
     if not root.exists():
         return []
     out: list[dict[str, Any]] = []
     for p in sorted(root.glob("VULN-*.md")):
-        title, severity, status = _parse_vuln_header(p)
+        meta = _parse_vuln_header(p)
+        vuln_id = meta.get("vuln_id") or _vuln_id_from_filename(p.stem)
+        replay = (replay_index or {}).get(vuln_id) if vuln_id else None
         out.append(
             {
                 "id": p.stem,
                 "path": str(p.relative_to(_evals_dir())),
-                "title": title,
-                "severity": severity,
-                "status": status,
+                "vuln_id": vuln_id,
+                "title": meta.get("title"),
+                "severity": meta.get("severity"),
+                "status": meta.get("status"),
+                "discovered_at": meta.get("discovered_at"),
+                "withdrawn": p.stem.startswith("VULN-WITHDRAWN-"),
+                "last_replay": replay,
             }
         )
     return out
 
 
-def _parse_vuln_header(p: Path) -> tuple[str | None, str | None, str | None]:
-    """Pull title + severity + status from the first ~30 lines.
+_VULN_ID_FILENAME_RE = re.compile(r"^(VULN-(?:WITHDRAWN-)?\d{3,})")
 
-    The Documentation Agent's ARCH §12.4 template is markdown with
-    `**Severity:** HIGH` / `**Status:** filed` style key-value lines
-    early in the file. Cheap regex-free scan; bounded read keeps a
-    malicious-or-malformed file from stalling the request.
+
+def _vuln_id_from_filename(stem: str) -> str | None:
+    """Fallback ID extraction from the file stem when frontmatter is absent.
+
+    Examples: "VULN-002-DRAFT" -> "VULN-002";
+              "VULN-WITHDRAWN-001-pre-F25-judge-confabulation" ->
+              "VULN-WITHDRAWN-001";
+              "VULN-001-c7-cross-patient-paraphrased-leakage" -> "VULN-001".
     """
-    title = severity = status = None
+    m = _VULN_ID_FILENAME_RE.match(stem)
+    return m.group(1) if m else None
+
+
+def _parse_vuln_header(p: Path) -> dict[str, Any]:
+    """Pull identity fields from the file.
+
+    Tries YAML frontmatter first (the canonical ARCH §12.4 format the
+    Documentation Agent writes — `---` markers + YAML key-values), and
+    falls back to a legacy markdown-body scan (`**Severity:** HIGH`)
+    so handwritten reports that pre-date the frontmatter convention
+    still render with badges.
+
+    Bounded read: ~100 lines max so a malformed-or-huge file can't
+    stall the request. Best-effort throughout — every field is
+    independently optional; missing fields return None.
+    """
+    out: dict[str, Any] = {
+        "title": None,
+        "severity": None,
+        "status": None,
+        "vuln_id": None,
+        "discovered_at": None,
+    }
     try:
         with p.open(encoding="utf-8") as f:
-            for i, raw in enumerate(f):
-                if i > 30:
-                    break
-                line = raw.strip()
-                if title is None and line.startswith("# "):
-                    title = line[2:].strip()
-                low = line.lower()
-                if "**severity:**" in low:
-                    severity = line.split(":", 1)[1].strip().strip("*").strip()
-                elif "**status:**" in low:
-                    status = line.split(":", 1)[1].strip().strip("*").strip()
+            head_lines = [next(f, "") for _ in range(100)]
     except OSError:
-        pass
-    return title, severity, status
+        return out
+
+    head = "".join(head_lines)
+    fm_match = re.match(r"\A---\s*\n(.*?)\n---\s*\n", head, flags=re.DOTALL)
+    if fm_match:
+        try:
+            fm = yaml.safe_load(fm_match.group(1)) or {}
+        except yaml.YAMLError:
+            fm = {}
+        if isinstance(fm, dict):
+            for key in ("title", "severity", "status", "vuln_id", "discovered_at"):
+                val = fm.get(key)
+                if val is not None:
+                    out[key] = str(val)
+
+    # Legacy fallback + title-from-H1 (in case frontmatter omits title).
+    for raw in head_lines:
+        line = raw.strip()
+        if out["title"] is None and line.startswith("# "):
+            out["title"] = line[2:].strip()
+        low = line.lower()
+        if out["severity"] is None and "**severity:**" in low:
+            out["severity"] = line.split(":", 1)[1].strip().strip("*").strip()
+        elif out["status"] is None and "**status:**" in low:
+            out["status"] = line.split(":", 1)[1].strip().strip("*").strip()
+
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +295,157 @@ _TREND_RUNS_LIMIT = 50
 limit so the dashboard has more historical points to chart, but still
 bounded — a long unattended run with hundreds of results dirs should
 not blow up the dashboard response."""
+
+
+_REPLAY_CASE_ID_RE = re.compile(r"^regression_replay::(.+)$")
+
+
+def _aggregate_regression_replays(
+    run_dirs: list[Path],
+) -> dict[str, dict[str, Any]]:
+    """Build a per-VULN snapshot of the most recent regression-replay outcome.
+
+    For each run dir, joins `regression_replay/attacks/*.json` to
+    `regression_replay/verdicts/*.json` by `attack_id`, derives the
+    originating regression case via `attack.generated_by`
+    (`regression_replay::<case_id>`), and looks up `parent_vuln_id` via:
+
+    1. `evals/regression/<category>/<case_id>.yaml`  (hand-authored cases)
+    2. `evals/regression/<category>/<case_id>.json`  (F17 auto-promoted; field
+       name `promoted_from_vuln_id`)
+
+    Builds a dict keyed by `vuln_id`. When the same VULN has multiple
+    replays across run dirs, keeps the most recent (by manifest
+    `last_updated_at`).
+
+    Returns `{}` when no replay artifacts exist. Empty / mid-write /
+    malformed verdict files are skipped; the function never raises.
+    """
+    snapshot: dict[str, dict[str, Any]] = {}
+
+    for run_dir in run_dirs:
+        replay_root = run_dir / "regression_replay"
+        if not replay_root.is_dir():
+            continue
+        manifest = _read_json_safe(run_dir / "manifest.json") or {}
+        target_version_sha = manifest.get("target_version_sha")
+        target_fingerprint = manifest.get("target_fingerprint")
+        # `last_updated_at` is a better "recency" anchor than `started_at`
+        # because the replay can happen mid-run; fall back to started_at.
+        recency = (
+            manifest.get("last_updated_at")
+            or manifest.get("started_at")
+            or run_dir.name
+        )
+
+        attacks_by_id: dict[str, dict[str, Any]] = {}
+        for atk_path in (replay_root / "attacks").glob("*.json") if (
+            replay_root / "attacks"
+        ).is_dir() else []:
+            atk = _read_json_safe(atk_path) or {}
+            atk_id = atk.get("attack_id")
+            if isinstance(atk_id, str):
+                attacks_by_id[atk_id] = atk
+
+        if not (replay_root / "verdicts").is_dir():
+            continue
+
+        for ver_path in (replay_root / "verdicts").glob("*.json"):
+            ver = _read_json_safe(ver_path) or {}
+            atk_id = ver.get("attack_id")
+            verdict = ver.get("verdict")
+            if not isinstance(atk_id, str) or not isinstance(verdict, str):
+                continue
+            atk = attacks_by_id.get(atk_id, {})
+            generated_by = atk.get("generated_by") or ""
+            m = _REPLAY_CASE_ID_RE.match(generated_by)
+            case_id = m.group(1) if m else None
+            category = atk.get("category")
+            vuln_id = _lookup_parent_vuln_id(case_id, category) if case_id else None
+            if not vuln_id:
+                continue
+
+            entry = {
+                "vuln_id": vuln_id,
+                "case_id": case_id,
+                "run_id": run_dir.name,
+                "last_replay_at": recency,
+                "last_verdict": verdict,
+                "target_version_sha": target_version_sha,
+                "target_fingerprint": target_fingerprint,
+            }
+            prior = snapshot.get(vuln_id)
+            if prior is None or _recency_key(entry) > _recency_key(prior):
+                # First seen for this vuln, OR newer than the prior record.
+                # Either way, this becomes the "last" entry; preserve the
+                # accumulated replay_count if we'd already counted earlier.
+                entry["replay_count"] = (prior or {}).get("replay_count", 0) + 1
+                snapshot[vuln_id] = entry
+            else:
+                prior["replay_count"] = prior.get("replay_count", 0) + 1
+
+    return snapshot
+
+
+def _recency_key(entry: dict[str, Any]) -> str:
+    """Sortable recency anchor; ISO-8601 strings sort chronologically as text."""
+    return str(entry.get("last_replay_at") or "")
+
+
+_SAFE_CASE_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _lookup_parent_vuln_id(case_id: str, category: str | None) -> str | None:
+    """Resolve a regression case id to its parent VULN id.
+
+    Tries the canonical layout first (`<evals>/regression/<category>/<case_id>.{yaml,json}`),
+    then falls back to a glob across all category dirs in case the
+    persisted attack omitted the category (defensive). Returns None when
+    no matching regression entry exists or none of them declare a parent.
+
+    Defense-in-depth: rejects any `case_id` containing characters outside
+    `[A-Za-z0-9_.\\-]` to prevent path traversal via `..` segments. The
+    upstream source is `attack.generated_by` written by the orchestrator
+    so practical exploitability requires daemon compromise, but the
+    sanitizer closes the surface entirely.
+    """
+    if not _SAFE_CASE_ID_RE.fullmatch(case_id):
+        return None
+    if category is not None and not _SAFE_CASE_ID_RE.fullmatch(category):
+        category = None
+    reg_root = _evals_dir() / "regression"
+    candidates: list[Path] = []
+    if category:
+        for ext in ("yaml", "yml", "json"):
+            candidates.append(reg_root / category / f"{case_id}.{ext}")
+    if not any(p.exists() for p in candidates):
+        # Broader fallback: any category, any extension. The glob pattern
+        # uses only the already-sanitized `case_id`; categories are
+        # whatever directories actually exist under reg_root, so this
+        # cannot escape regardless.
+        for ext in ("yaml", "yml", "json"):
+            candidates.extend(reg_root.glob(f"*/{case_id}.{ext}"))
+
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            with p.open(encoding="utf-8") as f:
+                if p.suffix == ".json":
+                    data = json.load(f)
+                else:
+                    data = yaml.safe_load(f) or {}
+        except (OSError, json.JSONDecodeError, yaml.YAMLError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        # YAML hand-authored uses `parent_vuln_id`; F17 JSON uses
+        # `promoted_from_vuln_id`. Try both.
+        for key in ("parent_vuln_id", "promoted_from_vuln_id"):
+            val = data.get(key)
+            if isinstance(val, str) and val.startswith("VULN-"):
+                return val
+    return None
 
 
 def _aggregate_trends(run_dirs: list[Path]) -> dict[str, Any]:
@@ -741,9 +951,18 @@ _INDEX_TEMPLATE = """<!doctype html>
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
     font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
   .badge-high { background: #fef2f2; color: var(--bad); }
+  .badge-critical { background: #fee2e2; color: #991b1b; }
   .badge-medium { background: #fffbeb; color: var(--warn); }
   .badge-low { background: #eff6ff; color: var(--info); }
   .badge-info { background: #f3f3ef; color: var(--muted); }
+  .badge-withdrawn { background: #ede9fe; color: #6d28d9; }
+  .verdict-pass { color: var(--good); }
+  .verdict-fail { color: var(--bad); }
+  .verdict-partial { color: var(--warn); }
+  .verdict-uncertain { color: var(--muted); }
+  .muted { color: var(--muted); }
+  tr.withdrawn { opacity: 0.55; }
+  tr.withdrawn td { background: #fafaf7; }
   .empty { color: var(--muted); padding: 14px; text-align: center; font-style: italic; }
   .api-list code { display: block; margin: 4px 0; }
   .chart-card { background: white; border: 1px solid var(--line); border-radius: 5px;
@@ -904,12 +1123,12 @@ _INDEX_TEMPLATE = """<!doctype html>
 {% if vulns %}
 <table>
   <thead><tr>
-    <th>ID</th><th>Title</th><th>Severity</th><th>Status</th>
+    <th>VULN ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Last regression replay</th><th>File</th>
   </tr></thead>
   <tbody>
   {% for v in vulns %}
-    <tr>
-      <td><code>{{ v.id }}</code></td>
+    <tr{% if v.withdrawn %} class="withdrawn"{% endif %}>
+      <td><strong><code>{{ v.vuln_id or v.id }}</code></strong>{% if v.withdrawn %} <span class="badge badge-withdrawn">withdrawn</span>{% endif %}</td>
       <td>{{ v.title or "(untitled)" }}</td>
       <td>
         {% if v.severity %}
@@ -917,10 +1136,34 @@ _INDEX_TEMPLATE = """<!doctype html>
         {% else %}—{% endif %}
       </td>
       <td>{{ v.status or "—" }}</td>
+      <td>
+        {% if v.last_replay %}
+          <span class="verdict-cell">
+            <strong class="verdict-{{ v.last_replay.last_verdict }}">{{ v.last_replay.last_verdict|upper }}</strong>
+            at {{ v.last_replay.last_replay_at[:19]|default(v.last_replay.last_replay_at) }}
+            {% if v.last_replay.replay_count > 1 %}
+              <span class="muted">({{ v.last_replay.replay_count }}× total)</span>
+            {% endif %}
+            {% if v.last_replay.target_fingerprint %}
+              <br><span class="muted">target fingerprint <code>{{ v.last_replay.target_fingerprint[:12] }}…</code></span>
+            {% elif v.last_replay.target_version_sha %}
+              <br><span class="muted">target sha <code>{{ v.last_replay.target_version_sha[:12] }}…</code></span>
+            {% endif %}
+          </span>
+        {% else %}
+          <span class="muted">never replayed</span>
+        {% endif %}
+      </td>
+      <td><code>{{ v.id }}</code></td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+{% if replay_index %}
+<p class="muted" style="font-size:12px;margin:6px 0 0;">Regression replays auto-fire on target <code>/health</code> fingerprint changes (F7) and replay the exact payload that triggered the original FAIL. A passing replay = the platform has confirmed the fix held; a still-failing replay = the fix didn't take.</p>
+{% else %}
+<p class="muted" style="font-size:12px;margin:6px 0 0;">No regression replays have run yet. They fire automatically when the target's <code>/health</code> fingerprint changes between runs — i.e., after a deploy.</p>
+{% endif %}
 {% else %}
 <div class="empty">No vulnerability reports yet. The Documentation Agent files reports when the Judge confirms an exploit.</div>
 {% endif %}
@@ -932,6 +1175,7 @@ _INDEX_TEMPLATE = """<!doctype html>
   <code>GET /api/runs</code>
   <code>GET /api/runs/&lt;run_id&gt;</code>
   <code>GET /api/vulnerabilities</code>
+  <code>GET /api/regression-replays</code>
 </div>
 
 </div>
@@ -1084,12 +1328,14 @@ def create_app() -> Flask:
             title_text="Cumulative attack coverage by category",
         )
         cost_chart_svg = _svg_cost_lines(trends["cost_series"])
-        vulns = _list_vulnerabilities()
+        replay_index = _aggregate_regression_replays(trend_dirs)
+        vulns = _list_vulnerabilities(replay_index=replay_index)
         rendered_at = datetime.now(UTC).replace(microsecond=0)
         return render_template_string(
             _INDEX_TEMPLATE,
             runs=runs,
             vulns=vulns,
+            replay_index=replay_index,
             limit=_RECENT_RUNS_LIMIT,
             trends=trends,
             verdict_chart_svg=verdict_chart_svg,
@@ -1140,8 +1386,30 @@ def create_app() -> Flask:
 
     @app.route("/api/vulnerabilities")
     def api_vulns() -> Any:
-        """Vuln-report index with parsed severity + status."""
-        return jsonify(_list_vulnerabilities())
+        """Vuln-report index with parsed severity + status + last regression replay.
+
+        Each entry carries `vuln_id`, `title`, `severity`, `status`,
+        `discovered_at`, `withdrawn` (bool), and `last_replay` (object or
+        null with `last_verdict`, `last_replay_at`, `target_fingerprint`,
+        `target_version_sha`, `replay_count`, `run_id`).
+        """
+        replay_index = _aggregate_regression_replays(
+            _list_run_dirs(limit=_TREND_RUNS_LIMIT)
+        )
+        return jsonify(_list_vulnerabilities(replay_index=replay_index))
+
+    @app.route("/api/regression-replays")
+    def api_regression_replays() -> Any:
+        """Per-VULN snapshot of the most recent regression-replay outcome.
+
+        Returns a dict keyed by `vuln_id` for machine readers that want
+        the F7 fingerprint-triggered replay history without parsing the
+        vuln-report markdown files. Empty dict when no replays have
+        ever fired.
+        """
+        return jsonify(
+            _aggregate_regression_replays(_list_run_dirs(limit=_TREND_RUNS_LIMIT))
+        )
 
     return app
 
