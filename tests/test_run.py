@@ -126,6 +126,7 @@ class _FakeJudge:
 @dataclass
 class _FakeDocumentation:
     draft_calls: list[dict[str, Any]] = field(default_factory=list)
+    raise_on_call: Exception | None = None
 
     @classmethod
     def from_env(cls, env: Any = None) -> "_FakeDocumentation":
@@ -133,6 +134,8 @@ class _FakeDocumentation:
 
     def draft(self, **kw: Any) -> DraftResult:
         self.draft_calls.append(kw)
+        if self.raise_on_call is not None:
+            raise self.raise_on_call
         fm = VulnerabilityReportFrontmatter(
             vuln_id="VULN-001",
             title="Fake",
@@ -160,6 +163,7 @@ class _FakeTarget:
     base_url: str = "http://localhost:8000"
     chat_calls: list[dict[str, Any]] = field(default_factory=list)
     attach_calls: list[dict[str, Any]] = field(default_factory=list)
+    fingerprint: str = "sha256:fakeprint000000a"
 
     @classmethod
     def from_env(cls, env: Any = None) -> "_FakeTarget":
@@ -177,6 +181,10 @@ class _FakeTarget:
             request_id="req-fake",
             trace_id="trace-fake",
         )
+
+    def health_fingerprint(self) -> str:
+        """F23 — single-shot path calls this to populate target_version_sha."""
+        return self.fingerprint
 
     def attach_and_extract(
         self,
@@ -992,3 +1000,316 @@ def test_single_shot_chat_endpoint_still_routes_to_chat(
 
     assert len(fake_target.chat_calls) == 1
     assert fake_target.attach_calls == []
+
+
+# ---------------------------------------------------------------------------
+# F23 — forensic persistence + Doc Agent in single-shot + fingerprint
+# ---------------------------------------------------------------------------
+
+
+def _make_target_factory(fake_target: _FakeTarget) -> type:
+    """Build a TargetClient-shaped class whose `from_env` returns `fake_target`."""
+    def _factory(env: Any = None) -> _FakeTarget:
+        return fake_target
+    return type("_FakeTargetCls", (), {"from_env": staticmethod(_factory)})
+
+
+@dataclass
+class _FakeRedTeamForFail:
+    """Variant that produces an attack the FakeJudge can grade FAIL."""
+    sequence: int = 0
+
+    @classmethod
+    def from_env(cls, env: Any = None) -> "_FakeRedTeamForFail":
+        return cls()
+
+    def generate(self, **kw: Any) -> AttackCandidate:
+        called_seq = kw.get("sequence", self.sequence + 1)
+        self.sequence = max(self.sequence + 1, called_seq)
+        return _make_attack(self.sequence)
+
+
+@dataclass
+class _FakeJudgeFail:
+    """Returns FAIL verdict — drives Doc Agent invocation in single-shot."""
+    sequence: int = 0
+
+    @classmethod
+    def from_env(cls, env: Any = None) -> "_FakeJudgeFail":
+        return cls()
+
+    def evaluate(self, *, attack: AttackCandidate, **kw: Any) -> JudgeVerdict:
+        called_seq = kw.get("sequence", self.sequence + 1)
+        self.sequence = max(self.sequence + 1, called_seq)
+        return _make_verdict(self.sequence, attack.attack_id, state="fail")
+
+
+def test_f23_single_shot_persists_target_response(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """F23 acceptance: every single-shot run leaves the target's response
+    on disk under `<run-dir>/responses/<attack_id>.json` — the load-bearing
+    forensic artifact for diagnosing Judge-vs-target divergence."""
+    fake_target = _FakeTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeam),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudge),
+        patch("clinical_redteam.run.DocumentationAgent", _FakeDocumentation),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+
+    assert exit_code == 0
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dirs = list(results_root.iterdir())
+    assert len(run_dirs) == 1
+    responses_dir = run_dirs[0] / "responses"
+    response_files = list(responses_dir.glob("*.json"))
+    assert len(response_files) == 1
+    body = json.loads(response_files[0].read_text(encoding="utf-8"))
+    # The persisted assistant_text matches what the FakeTarget returned —
+    # the load-bearing forensic invariant (same string the Judge saw).
+    assert body["assistant_text"] == "benign response"
+    assert body["status_code"] == 200
+
+
+def test_f23_single_shot_fail_verdict_invokes_doc_agent(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """F23: FAIL verdict in single-shot must invoke DocumentationAgent.draft()
+    so the overnight depth run produces VULN-NNN drafts (the pre-F23 gap
+    that left the dashboard showing 1 VULN despite 2 overnight FAILs)."""
+    fake_target = _FakeTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+    fake_doc = _FakeDocumentation()
+
+    def _doc_factory(env: Any = None) -> _FakeDocumentation:
+        return fake_doc
+    fake_doc_cls = type("_FakeDocCls", (), {"from_env": staticmethod(_doc_factory)})
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeamForFail),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudgeFail),
+        patch("clinical_redteam.run.DocumentationAgent", fake_doc_cls),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+
+    assert exit_code == 0
+    assert len(fake_doc.draft_calls) == 1
+    # Doc agent received the same attack + verdict the Judge graded
+    assert fake_doc.draft_calls[0]["verdict"].verdict == "fail"
+
+
+def test_f23_single_shot_pass_verdict_does_not_invoke_doc_agent(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """PASS verdicts MUST NOT trigger draft() — no spurious VULN drafts."""
+    fake_target = _FakeTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+    fake_doc = _FakeDocumentation()
+
+    def _doc_factory(env: Any = None) -> _FakeDocumentation:
+        return fake_doc
+    fake_doc_cls = type("_FakeDocCls", (), {"from_env": staticmethod(_doc_factory)})
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeam),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudge),  # default = pass
+        patch("clinical_redteam.run.DocumentationAgent", fake_doc_cls),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+
+    assert exit_code == 0
+    assert fake_doc.draft_calls == []
+
+
+def test_f23_single_shot_doc_agent_exception_does_not_kill_run(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """Doc Agent failure on FAIL verdict MUST NOT propagate — the verdict
+    is the load-bearing artifact; the markdown is a derived convenience."""
+    fake_target = _FakeTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+    fake_doc = _FakeDocumentation(raise_on_call=RuntimeError("simulated doc failure"))
+
+    def _doc_factory(env: Any = None) -> _FakeDocumentation:
+        return fake_doc
+    fake_doc_cls = type("_FakeDocCls", (), {"from_env": staticmethod(_doc_factory)})
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeamForFail),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudgeFail),
+        patch("clinical_redteam.run.DocumentationAgent", fake_doc_cls),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+
+    # Run still exits 0 — verdict was saved, Doc Agent failure was logged
+    assert exit_code == 0
+
+    # Verdict file landed on disk
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dir = next(iter(results_root.iterdir()))
+    verdict_files = list((run_dir / "verdicts").glob("*.json"))
+    assert len(verdict_files) == 1
+
+
+def test_f23_single_shot_manifest_carries_target_fingerprint(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """target_version_sha in the manifest comes from `target.health_fingerprint()`
+    — replaces the pre-F23 hardcoded `"unknown"` at run.py:625."""
+    fake_target = _FakeTarget(fingerprint="sha256:realfingerprint1")
+    fake_target_cls = _make_target_factory(fake_target)
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeam),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudge),
+        patch("clinical_redteam.run.DocumentationAgent", _FakeDocumentation),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        main([])
+
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dir = next(iter(results_root.iterdir()))
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["target_fingerprint"] == "sha256:realfingerprint1"
+    assert manifest["target_fingerprint"] != "unknown"
+
+
+def test_f23_single_shot_falls_back_to_unknown_when_fingerprint_raises(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """If health_fingerprint() raises, run still proceeds with target_version_sha='unknown'.
+    Defense: don't crash the run on a transient health-probe failure."""
+
+    @dataclass
+    class _BadHealthTarget(_FakeTarget):
+        def health_fingerprint(self) -> str:
+            raise RuntimeError("simulated /health 502")
+
+    fake_target = _BadHealthTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeam),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudge),
+        patch("clinical_redteam.run.DocumentationAgent", _FakeDocumentation),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+    assert exit_code == 0
+
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dir = next(iter(results_root.iterdir()))
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["target_fingerprint"] == "unknown"
+
+
+def test_f23_single_shot_doc_agent_from_env_failure_does_not_kill_run(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """If DocumentationAgent.from_env() itself raises (e.g., missing API
+    key), the run still exits 0 — Doc Agent is a derived convenience, not
+    a load-bearing artifact. Covers the from_env branch in
+    `_run_doc_agent_single_shot` that the draft-raises test doesn't reach."""
+    fake_target = _FakeTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+
+    def _from_env_raises(env: Any = None) -> Any:
+        raise RuntimeError("simulated OpenRouter key missing for doc tier")
+    fake_doc_cls = type(
+        "_FakeDocCls", (), {"from_env": staticmethod(_from_env_raises)}
+    )
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeamForFail),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudgeFail),
+        patch("clinical_redteam.run.DocumentationAgent", fake_doc_cls),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+
+    assert exit_code == 0
+    # Verdict was saved (the load-bearing artifact)
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dir = next(iter(results_root.iterdir()))
+    assert list((run_dir / "verdicts").glob("*.json"))
+
+
+def test_f23_single_shot_falls_back_when_fingerprint_returns_empty(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """Empty-string fingerprint return → fall back to 'unknown'.
+    Covers the second branch in `_resolve_target_version_sha` that the
+    raises-test doesn't exercise."""
+
+    @dataclass
+    class _EmptyHealthTarget(_FakeTarget):
+        def health_fingerprint(self) -> str:
+            return ""
+
+    fake_target = _EmptyHealthTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeam),
+        patch("clinical_redteam.run.JudgeAgent", _FakeJudge),
+        patch("clinical_redteam.run.DocumentationAgent", _FakeDocumentation),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        exit_code = main([])
+    assert exit_code == 0
+
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dir = next(iter(results_root.iterdir()))
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["target_fingerprint"] == "unknown"
+
+
+def test_f23_persisted_response_text_matches_judge_input_byte_exact(
+    env_with_target: dict[str, str], tmp_path: Path
+) -> None:
+    """The load-bearing forensic invariant: persisted `assistant_text`
+    equals the string passed to `judge.evaluate(target_response_text=...)`.
+    If these diverge, the artifact is useless for post-hoc diagnosis."""
+
+    captured_judge_input: list[str] = []
+
+    @dataclass
+    class _RecordingFakeJudge:
+        sequence: int = 0
+        @classmethod
+        def from_env(cls, env: Any = None) -> "_RecordingFakeJudge":
+            return cls()
+        def evaluate(self, *, attack: AttackCandidate, target_response_text: str,
+                     **kw: Any) -> JudgeVerdict:
+            captured_judge_input.append(target_response_text)
+            called_seq = kw.get("sequence", self.sequence + 1)
+            self.sequence = max(self.sequence + 1, called_seq)
+            return _make_verdict(self.sequence, attack.attack_id, state="pass")
+
+    fake_target = _FakeTarget()
+    fake_target_cls = _make_target_factory(fake_target)
+
+    with (
+        patch("clinical_redteam.run.RedTeamAgent", _FakeRedTeam),
+        patch("clinical_redteam.run.JudgeAgent", _RecordingFakeJudge),
+        patch("clinical_redteam.run.DocumentationAgent", _FakeDocumentation),
+        patch("clinical_redteam.run.TargetClient", fake_target_cls),
+    ):
+        main([])
+
+    # The string Judge graded
+    judge_saw = captured_judge_input[0]
+    # The string we persisted
+    results_root = Path(env_with_target["RESULTS_DIR"])
+    run_dir = next(iter(results_root.iterdir()))
+    response_file = next((run_dir / "responses").glob("*.json"))
+    body = json.loads(response_file.read_text(encoding="utf-8"))
+    # Byte-exact identity is the F23 invariant.
+    assert body["assistant_text"] == judge_saw

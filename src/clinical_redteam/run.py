@@ -403,7 +403,13 @@ def _run_continuous(args: argparse.Namespace) -> int:
         ledger = CostLedger.create(run_dir=handle.run_dir, cost_cap_usd=cost_cap_usd)
         coverage = CoverageTracker.create(
             run_dir=handle.run_dir,
-            target_version_sha="unknown",  # Phase 2 reads /version from target
+            # In continuous mode the daemon's __post_init__ (F7) computes
+            # the actual fingerprint via `target.health_fingerprint()` and
+            # writes it to the manifest. CoverageTracker's field here is
+            # metadata-only — F7's change detector reads the manifest, not
+            # this. F23 wires the single-shot path explicitly because that
+            # path has no daemon to set the fingerprint for it.
+            target_version_sha="unknown",
             cost_cap_usd=cost_cap_usd,
         )
     obs = Observability.from_env(session_id=run_id)
@@ -621,18 +627,27 @@ def _run_single_shot(args: argparse.Namespace) -> int:
         },
     )
     ledger = CostLedger.create(run_dir=handle.run_dir, cost_cap_usd=cost_cap_usd)
+
+    # F23: target_version_sha derived from /health fingerprint (was
+    # hardcoded "unknown" pre-F23). The fingerprint is what F7's
+    # regression-replay-on-change loop compares across runs — leaving
+    # "unknown" silently broke that detector for single-shot runs.
+    target = TargetClient.from_env()
+    target_version_sha = _resolve_target_version_sha(target)
+
     coverage = CoverageTracker.create(
         run_dir=handle.run_dir,
-        target_version_sha="unknown",
+        target_version_sha=target_version_sha,
         cost_cap_usd=cost_cap_usd,
     )
+    handle.update_target_fingerprint(target_version_sha)
     obs = Observability.from_env(session_id=run_id)
 
     logger.info("run=%s seed=%s category=%s", run_id, seed_id, args.category)
     logger.info("results dir: %s", handle.run_dir)
+    logger.info("target_version_sha: %s", target_version_sha)
 
     red_team = RedTeamAgent.from_env()
-    target = TargetClient.from_env()
     judge = JudgeAgent.from_env()
 
     # -- Red Team --
@@ -722,6 +737,21 @@ def _run_single_shot(args: argparse.Namespace) -> int:
         response.request_id,
     )
 
+    # F23: persist the target's response BEFORE the Judge step so a
+    # Judge crash still leaves the response on disk for post-mortem.
+    # Load-bearing forensic invariant: `response.assistant_text` is the
+    # exact string passed to `judge.evaluate(target_response_text=...)`
+    # below — the same Python object, no transformations in between.
+    handle.save_response(
+        attack_id=candidate.attack_id,
+        status_code=response.status_code,
+        latency_ms=response.latency_ms,
+        request_id=response.request_id,
+        trace_id=response.trace_id,
+        assistant_text=response.assistant_text,
+        extraction=response.extraction,
+    )
+
     # -- Judge --
     with obs.agent_span(
         agent_name="judge",
@@ -762,6 +792,23 @@ def _run_single_shot(args: argparse.Namespace) -> int:
         session_cost_usd=ledger.total_usd,
     )
 
+    # F23: Doc Agent auto-drafts on FAIL/PARTIAL in single-shot mode too
+    # (continuous mode has had this since A2; single-shot was the gap).
+    # A draft() failure MUST NOT kill the run after Judge succeeded — log
+    # + continue. The Judge verdict is the load-bearing artifact for
+    # grading; the vuln markdown is a derived convenience. Same defensive
+    # posture as the daemon's `_run_documentation` (orchestrator.py).
+    if verdict.verdict in ("fail", "partial"):
+        _run_doc_agent_single_shot(
+            obs=obs,
+            attack=candidate,
+            verdict=verdict,
+            response=response,
+            target_version_sha=target_version_sha,
+            handle=handle,
+            ledger=ledger,
+        )
+
     obs.flush()
 
     # -- Summary --
@@ -784,6 +831,110 @@ def _run_single_shot(args: argparse.Namespace) -> int:
     }
     print(json.dumps(summary, indent=2, default=str))
     return 0
+
+
+def _resolve_target_version_sha(target: TargetClient) -> str:
+    """F23 — derive target_version_sha from /health fingerprint.
+
+    Replaces the pre-F23 hardcoded `"unknown"` at run-start. F7's
+    regression-replay loop compares this fingerprint across runs to
+    detect target changes; leaving it `"unknown"` silently broke that
+    detector for single-shot runs.
+
+    Fail-safe: if `health_fingerprint()` raises or returns falsy, log a
+    WARNING and fall back to `"unknown"` — don't crash the run, but
+    make sure operators see the gap rather than shipping silently.
+    """
+    try:
+        fingerprint = target.health_fingerprint()
+    except Exception as exc:  # noqa: BLE001 — defensive, never crash on health probe
+        logger.warning(
+            "F23: target.health_fingerprint() raised (%s); "
+            "falling back to target_version_sha='unknown'",
+            exc,
+        )
+        return "unknown"
+    if not fingerprint:
+        logger.warning(
+            "F23: target.health_fingerprint() returned empty; "
+            "falling back to target_version_sha='unknown'"
+        )
+        return "unknown"
+    return fingerprint
+
+
+def _run_doc_agent_single_shot(
+    *,
+    obs: Observability,
+    attack: Any,
+    verdict: Any,
+    response: Any,
+    target_version_sha: str,
+    handle: Any,
+    ledger: CostLedger,
+) -> None:
+    """F23 — invoke DocumentationAgent.draft() from the single-shot path.
+
+    Defensive posture: a Doc Agent failure MUST NOT propagate or change
+    the exit code. The Judge verdict is the load-bearing artifact for
+    grading; the vuln markdown is a derived convenience that the
+    overnight depth-run script benefits from but doesn't depend on. Mirror
+    the daemon's `_run_documentation` (orchestrator.py) error-handling.
+    """
+    try:
+        documentation = DocumentationAgent.from_env()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "F23: DocumentationAgent.from_env() failed (%s); "
+            "verdict still saved, no vuln draft produced",
+            exc,
+        )
+        return
+
+    try:
+        with obs.agent_span(
+            agent_name="documentation",
+            agent_version="v0.1.0",
+            agent_role="vuln_draft_authoring",
+            attack_id=attack.attack_id,
+            category=attack.category,
+            inputs={"verdict": verdict.verdict, "confidence": verdict.confidence},
+        ) as d_span:
+            draft = documentation.draft(
+                attack=attack,
+                target_response_text=response.assistant_text,
+                verdict=verdict,
+                target_version_sha=target_version_sha,
+                run_handle=handle,
+            )
+            d_span.update(
+                output={
+                    "vuln_id": draft.vuln_id,
+                    "severity": draft.severity,
+                    "model_used": draft.model_used,
+                }
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "F23: DocumentationAgent.draft() failed in single-shot "
+            "(%s); verdict still saved, no vuln draft produced", exc,
+        )
+        return
+
+    try:
+        ledger.record(
+            tier="documentation",
+            model_used=draft.model_used,
+            cost_usd=draft.cost_usd,
+            tokens_input=draft.tokens_input,
+            tokens_output=draft.tokens_output,
+            related_id=draft.vuln_id,
+        )
+    except CostLedgerError as exc:
+        logger.warning(
+            "F23: cost-ledger record for doc draft failed (%s); "
+            "draft file still on disk", exc,
+        )
 
 
 def _new_run_id() -> str:

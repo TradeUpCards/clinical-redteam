@@ -323,3 +323,131 @@ def test_manifest_updates_after_every_save(
 def test_manifest_filename_constants_match_layout(tmp_path: Path) -> None:
     handle = start_run("run-x", results_dir=tmp_path, target_url="http://localhost:8000")
     assert handle.manifest_path.name == MANIFEST_FILENAME
+
+
+# ---------------------------------------------------------------------------
+# F23 — RunHandle.save_response (forensic response capture)
+# ---------------------------------------------------------------------------
+
+
+def test_f23_save_response_writes_expected_shape(tmp_path: Path) -> None:
+    """Persisted response carries every field the audit ticket lists."""
+    handle = start_run("run-f23-1", results_dir=tmp_path, target_url="http://localhost:8000")
+    handle.save_response(
+        attack_id="atk_2026-05-14_001",
+        status_code=200,
+        latency_ms=1247,
+        request_id="req_xxx",
+        trace_id="trace_xxx",
+        assistant_text="{}",
+        extraction=None,
+    )
+
+    import json as _json
+    path = handle.responses_dir / "atk_2026-05-14_001.json"
+    assert path.exists()
+    body = _json.loads(path.read_text(encoding="utf-8"))
+    assert body["attack_id"] == "atk_2026-05-14_001"
+    assert body["status_code"] == 200
+    assert body["latency_ms"] == 1247
+    assert body["request_id"] == "req_xxx"
+    assert body["trace_id"] == "trace_xxx"
+    assert body["assistant_text"] == "{}"
+    assert body["extraction"] is None
+    assert "received_at" in body
+
+
+def test_f23_save_response_assistant_text_roundtrips_byte_exact(
+    tmp_path: Path,
+) -> None:
+    """Load-bearing forensic invariant: persisted assistant_text MUST equal
+    the input string byte-for-byte. Any divergence would invalidate the
+    artifact for diagnosing Judge-vs-target disagreement.
+    """
+    handle = start_run("run-f23-2", results_dir=tmp_path, target_url="http://localhost:8000")
+    # Pathological text: unicode, embedded quotes, newlines, control chars
+    weird_text = (
+        'Mixed "quotes" and \'apostrophes\'\n'
+        "Unicode: éàü 中文\n"
+        "Tab:\there\n"
+        "Backslash: \\n is not a newline\n"
+        "JSON-ish: {\"key\": \"value\"}\n"
+    )
+    handle.save_response(
+        attack_id="atk_2026-05-14_002",
+        status_code=200,
+        latency_ms=42,
+        request_id="r",
+        trace_id="t",
+        assistant_text=weird_text,
+        extraction={"current_medications": [{"name": "Lisinopril"}]},
+    )
+
+    import json as _json
+    path = handle.responses_dir / "atk_2026-05-14_002.json"
+    body = _json.loads(path.read_text(encoding="utf-8"))
+    assert body["assistant_text"] == weird_text
+
+
+def test_f23_save_response_extraction_preserves_nested_structure(
+    tmp_path: Path,
+) -> None:
+    """The full extraction dict round-trips so Judge-vs-target divergence
+    can be diagnosed against the structured payload, not just the
+    stringified prose."""
+    handle = start_run("run-f23-3", results_dir=tmp_path, target_url="http://localhost:8000")
+    extraction = {
+        "current_medications": [
+            {"name": "Lisinopril", "source_block_id": "block_0", "confidence": 0.91},
+            {"name": "Warfarin", "source_block_id": "block_0", "confidence": 0.95},
+        ],
+        "allergies": [],
+        "extraction_confidence_avg": 0.93,
+    }
+    handle.save_response(
+        attack_id="atk_2026-05-14_003",
+        status_code=200,
+        latency_ms=42,
+        request_id="r",
+        trace_id="t",
+        assistant_text="dummy",
+        extraction=extraction,
+    )
+    import json as _json
+    path = handle.responses_dir / "atk_2026-05-14_003.json"
+    body = _json.loads(path.read_text(encoding="utf-8"))
+    assert body["extraction"] == extraction
+
+
+def test_f23_save_response_updates_manifest_index(tmp_path: Path) -> None:
+    """`response_ids` in the manifest tracks every persisted response."""
+    handle = start_run("run-f23-4", results_dir=tmp_path, target_url="http://localhost:8000")
+    handle.save_response(
+        attack_id="atk_a", status_code=200, latency_ms=1, request_id=None,
+        trace_id=None, assistant_text="a", extraction=None,
+    )
+    handle.save_response(
+        attack_id="atk_b", status_code=200, latency_ms=1, request_id=None,
+        trace_id=None, assistant_text="b", extraction=None,
+    )
+    manifest = handle.load_manifest()
+    assert manifest["response_ids"] == ["atk_a", "atk_b"]
+
+
+def test_f23_save_response_raises_on_duplicate_attack_id(tmp_path: Path) -> None:
+    """A second save with the same attack_id raises (catches the impossible-
+    in-practice case of two responses for one attack — sequence numbers are
+    monotonic per run, so this would indicate a real ordering bug)."""
+    from clinical_redteam.persistence import DuplicateArtifactError
+
+    handle = start_run("run-f23-5", results_dir=tmp_path, target_url="http://localhost:8000")
+    payload = dict(
+        attack_id="atk_dup", status_code=200, latency_ms=1, request_id=None,
+        trace_id=None, assistant_text="same", extraction=None,
+    )
+    handle.save_response(**payload)
+    # Second save with the same attack_id but a new `received_at` timestamp
+    # produces a different payload → DuplicateArtifactError. Documents the
+    # contract: one response per attack_id; callers must not re-save.
+    with pytest.raises(DuplicateArtifactError):
+        handle.save_response(**payload)

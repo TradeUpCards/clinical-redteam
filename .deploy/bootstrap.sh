@@ -86,7 +86,11 @@ mkdir -p "$DEPLOY_DIR" "$EVALS_DIR"
 # (uid 1000 = `redteam` per .deploy/Dockerfile). Without this the
 # container can't mkdir new run-id directories under results/ — it
 # inherits the root-owned mount and PermissionErrors on first write.
-mkdir -p "$EVALS_DIR/results" "$EVALS_DIR/vulnerabilities"
+mkdir -p "$EVALS_DIR/results" "$EVALS_DIR/vulnerabilities" "$EVALS_DIR/regression"
+# F23: regression/ is bind-mounted into both daemon (rw — F17 auto-promote
+# writes here) and status (ro). Without the mkdir + chown the daemon
+# PermissionErrors on the first F17 promotion attempt (we hit this exact
+# pattern before with results/ and vulnerabilities/).
 chown -R 1000:1000 "$EVALS_DIR"
 
 # 1. Generate /opt/redteam/.env on first run; preserve across re-runs.

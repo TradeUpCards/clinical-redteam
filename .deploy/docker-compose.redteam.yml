@@ -104,6 +104,12 @@ services:
       # container) — bootstrap.sh handles the chown before `compose up`.
       - /opt/redteam/evals/results:/app/evals/results
       - /opt/redteam/evals/vulnerabilities:/app/evals/vulnerabilities
+      # F23: F17-auto-promoted regression entries land here. Without this
+      # mount the JSON entries would write into the container overlay and
+      # vanish on `docker compose down --rm`. F7's replay loop reads from
+      # the same path; mount is shared so promoted entries survive
+      # container exits AND get replayed on the next fingerprint change.
+      - /opt/redteam/evals/regression:/app/evals/regression
 
     networks:
       # Default network for daemon ↔ status comms.
@@ -148,6 +154,9 @@ services:
       # tree. Status reads results + vulnerabilities, never writes.
       - /opt/redteam/evals/results:/app/evals/results:ro
       - /opt/redteam/evals/vulnerabilities:/app/evals/vulnerabilities:ro
+      # F23: status app surfaces regression entries on the dashboard but
+      # never writes to them — :ro for defense in depth.
+      - /opt/redteam/evals/regression:/app/evals/regression:ro
 
     networks:
       - redteam-internal
