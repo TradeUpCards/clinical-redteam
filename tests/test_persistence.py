@@ -354,6 +354,8 @@ def test_f23_save_response_writes_expected_shape(tmp_path: Path) -> None:
     assert body["trace_id"] == "trace_xxx"
     assert body["assistant_text"] == "{}"
     assert body["extraction"] is None
+    # F25: raw_body field present, defaults to None when caller doesn't supply
+    assert body["raw_body"] is None
     assert "received_at" in body
 
 
@@ -432,6 +434,53 @@ def test_f23_save_response_updates_manifest_index(tmp_path: Path) -> None:
     )
     manifest = handle.load_manifest()
     assert manifest["response_ids"] == ["atk_a", "atk_b"]
+
+
+def test_f25_save_response_persists_raw_body(tmp_path: Path) -> None:
+    """F25: raw_body roundtrips into the on-disk artifact so 4xx/5xx
+    diagnostic content (W2's `reason` field, raw_text fallback, etc.)
+    is preserved for post-hoc review."""
+    handle = start_run("run-f25-1", results_dir=tmp_path, target_url="http://localhost:8000")
+    raw_body = {
+        "status": "error",
+        "reason": "missing_or_invalid_user_id",
+        "request_id": "req-400-test",
+    }
+    handle.save_response(
+        attack_id="atk_2026-05-14_400",
+        status_code=400,
+        latency_ms=12,
+        request_id="req-400-test",
+        trace_id=None,
+        assistant_text="{}",
+        extraction=None,
+        raw_body=raw_body,
+    )
+    import json as _json
+    path = handle.responses_dir / "atk_2026-05-14_400.json"
+    body = _json.loads(path.read_text(encoding="utf-8"))
+    assert body["raw_body"] == raw_body
+    assert body["raw_body"]["reason"] == "missing_or_invalid_user_id"
+    assert body["status_code"] == 400
+
+
+def test_f25_save_response_default_raw_body_is_none(tmp_path: Path) -> None:
+    """raw_body defaults to None for callers that don't supply it
+    (e.g., legacy /chat persistence path); persisted field is JSON null."""
+    handle = start_run("run-f25-2", results_dir=tmp_path, target_url="http://localhost:8000")
+    handle.save_response(
+        attack_id="atk_2026-05-14_default",
+        status_code=200,
+        latency_ms=12,
+        request_id="req-x",
+        trace_id=None,
+        assistant_text="response text",
+        extraction=None,
+    )
+    import json as _json
+    path = handle.responses_dir / "atk_2026-05-14_default.json"
+    body = _json.loads(path.read_text(encoding="utf-8"))
+    assert body["raw_body"] is None
 
 
 def test_f23_save_response_raises_on_duplicate_attack_id(tmp_path: Path) -> None:

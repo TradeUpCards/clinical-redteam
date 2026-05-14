@@ -617,13 +617,19 @@ def test_compute_attach_hmac_refuses_empty_secret() -> None:
 
 def test_attach_and_extract_happy_path_posts_multipart_with_correct_signature() -> None:
     """Verify the multipart body shape, signature derivation from the EXACT
-    posted PDF bytes, and response parsing for the success path."""
+    posted PDF bytes, and response parsing for the success path.
+
+    F25-extended: auth fields land in X-OpenEMR-* HEADERS, not form data.
+    Form body trimmed to W2's Form(...) signature: patient_id, doc_ref_id,
+    doc_type, file.
+    """
     captured: dict = {}
 
-    def handler(url, *, files, data):
+    def handler(url, *, files, data, headers):
         captured["url"] = url
         captured["files"] = files
         captured["data"] = dict(data)
+        captured["headers"] = dict(headers)
         return _ok_extract_response()
 
     http = MagicMock()
@@ -655,30 +661,38 @@ def test_attach_and_extract_happy_path_posts_multipart_with_correct_signature() 
     assert pdf_bytes.startswith(b"%PDF")
     assert file_tuple[2] == "application/pdf"
 
-    # Form fields
+    # F25: auth fields land in HEADERS, not form data.
+    headers = captured["headers"]
+    assert headers["X-OpenEMR-User-Id"] == "1"
+    assert headers["X-OpenEMR-Timestamp"] == "1715000000"
+
+    # F25: form data trimmed to exactly what W2's Form(...) signature
+    # declares — patient_id, doc_ref_id, doc_type. Auth fields + session_id
+    # are NOT present.
     fields = captured["data"]
-    assert fields["user_id"] == "1"
     assert fields["patient_id"] == "999100"
     assert fields["doc_ref_id"] == "docref-001"
     assert fields["doc_type"] == "intake_form"
-    assert fields["timestamp"] == "1715000000"
-    assert fields["session_id"] == "sess-test"
+    for forbidden in ("user_id", "timestamp", "signature", "session_id"):
+        assert forbidden not in fields, (
+            f"F25: {forbidden!r} must not be sent as a form field "
+            f"(W2's Form(...) signature rejects it pre-HMAC)"
+        )
 
-    # Signature is derived from the EXACT bytes posted — recompute
-    # from the captured file bytes and assert match.
+    # Signature lands in the X-OpenEMR-HMAC header, derived from the
+    # EXACT bytes posted in the file part.
     expected_file_sha = hashlib.sha256(pdf_bytes).hexdigest()
     expected_sig = compute_attach_hmac(
         user_id=1, patient_id=999100, doc_ref_id="docref-001",
         doc_type="intake_form", timestamp=1_715_000_000,
         file_sha256=expected_file_sha, secret="test-secret",
     )
-    assert fields["signature"] == expected_sig
+    assert headers["X-OpenEMR-HMAC"] == expected_sig
 
     # Response parsing — extraction dict preserved, assistant_text is its JSON
     assert response.status_code == 200
     assert response.extraction is not None
     assert "current_medications" in response.extraction
-    # assistant_text is the stringified extraction for Judge rubric matching
     parsed = json.loads(response.assistant_text)
     assert "current_medications" in parsed
 
@@ -687,11 +701,12 @@ def test_attach_and_extract_signature_recomputes_when_text_changes() -> None:
     """Two attacks with different document_text MUST produce different
     file_sha256 values and therefore different signatures — the C-A
     surface depends on each variant going to the wire as its own
-    distinct PDF with its own hash."""
+    distinct PDF with its own hash. F25: signature is now in the
+    X-OpenEMR-HMAC header, not a form field."""
     sigs: list[str] = []
 
-    def handler(url, *, files, data):
-        sigs.append(data["signature"])
+    def handler(url, *, files, data, headers):
+        sigs.append(headers["X-OpenEMR-HMAC"])
         return _ok_extract_response()
 
     http = MagicMock()
@@ -861,7 +876,7 @@ def test_attach_and_extract_empty_extraction_yields_empty_json_text() -> None:
 def test_attach_and_extract_doc_ref_id_auto_generated_when_omitted() -> None:
     """No doc_ref_id supplied → UUID hex string generated per attack."""
     captured: dict = {}
-    def handler(url, *, files, data):
+    def handler(url, *, files, data, headers):
         captured["doc_ref_id"] = data["doc_ref_id"]
         return _ok_extract_response()
 
@@ -892,6 +907,182 @@ def test_attach_hmac_max_age_seconds_honors_env_override() -> None:
     env["ATTACH_HMAC_MAX_AGE_SECONDS"] = "120"
     client = TargetClient.from_env(env=env)
     assert client.attach_hmac_max_age_seconds == 120
+
+
+# ---------------------------------------------------------------------------
+# F25 — header placement + body capture
+# ---------------------------------------------------------------------------
+
+
+def _build_attach_client(http: MagicMock) -> TargetClient:
+    return TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="test-secret",
+        user_id=1,
+        sentinel_patient_ids=(999100,),
+        http_client=http,
+    )
+
+
+def test_f25_attach_sends_x_openemr_user_id_header() -> None:
+    """`user_id` lands in `X-OpenEMR-User-Id` header — the field W2's
+    endpoint reads at `agent/main.py:284-291`. Pre-F25 we sent it as a
+    form field and W2's `int("")` raised → 400 missing_or_invalid_user_id
+    before HMAC verify even fired."""
+    captured: dict = {}
+
+    def handler(url, *, files, data, headers):
+        captured["headers"] = dict(headers)
+        captured["data"] = dict(data)
+        return _ok_extract_response()
+
+    http = MagicMock()
+    http.post.side_effect = handler
+    client = _build_attach_client(http)
+    client.attach_and_extract(
+        document_text="x", patient_id=999100, doc_ref_id="r",
+        now=1_715_000_000,
+    )
+    assert captured["headers"]["X-OpenEMR-User-Id"] == "1"
+    assert "user_id" not in captured["data"]
+
+
+def test_f25_attach_sends_x_openemr_timestamp_header() -> None:
+    """`timestamp` lands in `X-OpenEMR-Timestamp` header. W2's HMAC
+    verify reads it from the header (not the form) to reconstruct the
+    payload-to-sign."""
+    captured: dict = {}
+
+    def handler(url, *, files, data, headers):
+        captured["headers"] = dict(headers)
+        captured["data"] = dict(data)
+        return _ok_extract_response()
+
+    http = MagicMock()
+    http.post.side_effect = handler
+    client = _build_attach_client(http)
+    client.attach_and_extract(
+        document_text="x", patient_id=999100, doc_ref_id="r",
+        now=1_715_000_000,
+    )
+    assert captured["headers"]["X-OpenEMR-Timestamp"] == "1715000000"
+    assert "timestamp" not in captured["data"]
+
+
+def test_f25_attach_sends_x_openemr_hmac_header() -> None:
+    """Signature lands in `X-OpenEMR-HMAC` header — matches W2's verify
+    path. HMAC formula itself UNCHANGED from F20."""
+    captured: dict = {}
+
+    def handler(url, *, files, data, headers):
+        captured["headers"] = dict(headers)
+        captured["data"] = dict(data)
+        return _ok_extract_response()
+
+    http = MagicMock()
+    http.post.side_effect = handler
+    client = _build_attach_client(http)
+    client.attach_and_extract(
+        document_text="x", patient_id=999100, doc_ref_id="r",
+        now=1_715_000_000,
+    )
+    # Signature is a 64-char lowercase hex string
+    sig = captured["headers"]["X-OpenEMR-HMAC"]
+    assert len(sig) == 64
+    assert all(c in "0123456789abcdef" for c in sig)
+    assert "signature" not in captured["data"]
+
+
+def test_f25_attach_form_data_only_carries_w2_form_fields() -> None:
+    """Form body trimmed to exactly W2's `Form(...)` declarations:
+    patient_id, doc_ref_id, doc_type, file (file is in `files=`,
+    not data). NOTHING else — auth fields are headers; session_id
+    is dropped entirely."""
+    captured: dict = {}
+
+    def handler(url, *, files, data, headers):
+        captured["data"] = dict(data)
+        return _ok_extract_response()
+
+    http = MagicMock()
+    http.post.side_effect = handler
+    client = _build_attach_client(http)
+    client.attach_and_extract(
+        document_text="x", patient_id=999100, doc_ref_id="r",
+        doc_type="intake_form",
+        now=1_715_000_000, session_id="must-not-be-on-the-wire",
+    )
+
+    assert set(captured["data"].keys()) == {"patient_id", "doc_ref_id", "doc_type"}
+    assert captured["data"] == {
+        "patient_id": "999100",
+        "doc_ref_id": "r",
+        "doc_type": "intake_form",
+    }
+
+
+def test_f25_attach_400_raw_body_persisted_via_raw_body_field() -> None:
+    """4xx error responses persist their JSON body in `TargetResponse.raw_body`
+    so a post-hoc reviewer can see W2's `reason` field — the diagnostic we
+    used to find the F25 root cause itself."""
+    request = httpx.Request("POST", "http://localhost:8000/attach_and_extract")
+    err_body = {
+        "status": "error",
+        "reason": "missing_or_invalid_user_id",
+        "request_id": "req-400",
+    }
+    err_response = httpx.Response(400, json=err_body, request=request)
+
+    http = MagicMock()
+    http.post.return_value = err_response
+    client = _build_attach_client(http)
+    response = client.attach_and_extract(
+        document_text="x", patient_id=999100, doc_ref_id="r",
+    )
+    assert response.status_code == 400
+    # raw_body carries the diagnostic reason
+    assert response.raw_body == err_body
+    assert response.raw_body["reason"] == "missing_or_invalid_user_id"
+    # And `extraction` is None because the body didn't include one
+    assert response.extraction is None
+
+
+def test_f25_attach_4xx_non_json_body_falls_back_to_raw_text() -> None:
+    """If the 4xx body isn't valid JSON (HTML error page from a CDN,
+    plain text from a proxy), `raw_body` carries `{"raw_text": ...}`
+    so we don't lose the diagnostic surface entirely."""
+    request = httpx.Request("POST", "http://localhost:8000/attach_and_extract")
+    err_response = httpx.Response(
+        502,
+        content=b"<html><body>Bad Gateway</body></html>",
+        request=request,
+    )
+    http = MagicMock()
+    http.post.return_value = err_response
+    client = TargetClient(
+        base_url="http://localhost:8000",
+        hmac_secret="x",
+        user_id=1,
+        sentinel_patient_ids=(999100,),
+        max_5xx_retries=0,
+        backoff_base_seconds=0.0,
+        http_client=http,
+    )
+    # 5xx exhausts retries and raises — but the error path through 4xx
+    # doesn't raise. Verify the structured fallback by exercising a
+    # 400 with HTML body instead.
+    err_response_400 = httpx.Response(
+        400,
+        content=b"<html>error</html>",
+        request=request,
+    )
+    http.post.return_value = err_response_400
+    response = client.attach_and_extract(
+        document_text="x", patient_id=999100, doc_ref_id="r",
+    )
+    assert response.status_code == 400
+    assert "raw_text" in response.raw_body
+    assert "<html>" in response.raw_body["raw_text"]
 
 
 # --- dispatch_to_endpoint -------------------------------------------------

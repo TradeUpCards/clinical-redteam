@@ -750,6 +750,7 @@ def _run_single_shot(args: argparse.Namespace) -> int:
         trace_id=response.trace_id,
         assistant_text=response.assistant_text,
         extraction=response.extraction,
+        raw_body=response.raw_body,
     )
 
     # -- Judge --
