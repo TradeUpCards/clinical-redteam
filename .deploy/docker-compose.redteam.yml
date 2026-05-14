@@ -87,6 +87,11 @@ services:
       # operator wants a longer unsupervised run.
       MAX_SESSION_COST_USD: ${MAX_SESSION_COST_USD:-5.00}
 
+      # F19 daily budget gate. Rolling-24h aggregate across all runs in
+      # evals/results/. Daemon refuses to START a new run (exit 8) when
+      # exceeded — pairs with `on-failure:3` so it doesn't restart-loop.
+      MAX_DAILY_COST_USD: ${MAX_DAILY_COST_USD:-50.00}
+
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     volumes:

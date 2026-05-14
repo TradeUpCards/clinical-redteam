@@ -139,6 +139,15 @@ DOCUMENTATION_FALLBACK_MODEL=anthropic/claude-sonnet-4-5
 # for unsupervised operation; raise if you want longer runs.
 MAX_SESSION_COST_USD=5.00
 
+# === Daily budget gate (F19, rolling-24h aggregate, USD) ===
+# Daemon refuses to START a new run if the sum of total_usd across all
+# cost-ledger.json files in evals/results/ over the last 24h is >= this
+# value. Pairs with restart: on-failure:3 — gate fires as exit 8, which
+# is non-zero so on-failure briefly retries, then gives up at the cap.
+# Captures OpenRouter-side spend only; the target-side LLM provider
+# (Anthropic, on the W2 Co-Pilot side) is not visible to this gate.
+MAX_DAILY_COST_USD=50.00
+
 # === Langfuse — OPTIONAL ===
 # Without these, inter-agent traces don't emit but everything else runs.
 # Get keys at https://cloud.langfuse.com.
@@ -172,6 +181,9 @@ _patch_env_var "JUDGE_MODEL" "anthropic/claude-sonnet-4-5"
 _patch_env_var "JUDGE_FALLBACK_MODEL" "anthropic/claude-haiku-4.5"
 _patch_env_var "DOCUMENTATION_MODEL" "anthropic/claude-haiku-4.5"
 _patch_env_var "DOCUMENTATION_FALLBACK_MODEL" "anthropic/claude-sonnet-4-5"
+# F19 daily budget gate. Idempotent patch so existing .env files from
+# previous bootstrap runs pick up the new gate without manual edits.
+_patch_env_var "MAX_DAILY_COST_USD" "50.00"
 
 # 2. Compose file is referenced IN-PLACE from the repo.
 #    Earlier versions copied it to /opt/redteam/, but that broke the
