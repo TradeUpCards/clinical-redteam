@@ -21,7 +21,21 @@ services:
 
   redteam-daemon:
     container_name: redteam-daemon
-    restart: always
+    # F9 V2 (Tate, 2026-05-13): restart: always → restart: on-failure:3
+    #
+    # Rationale: when the orchestrator halts INTENTIONALLY (cost cap,
+    # signal collapse, target circuit open, HMAC misconfig, etc.) it
+    # exits with code 0. `on-failure` only restarts on non-zero exit —
+    # i.e. genuine Python crashes (uncaught exceptions, OOM kill). The
+    # max-retries:3 cap means even repeated crashes give up after 3
+    # attempts so we don't burn OpenRouter on a daemon that can't stay
+    # up. Operator runs `docker compose start redteam-daemon` to resume
+    # after an intentional halt.
+    #
+    # Previous `restart: always` caused a restart loop during the W2
+    # Anthropic credit-balance outage on 2026-05-13 — each halt burned
+    # one Red Team gen call before halting again.
+    restart: on-failure:3
     build:
       context: ..              # repo root (this compose lives at .deploy/)
       dockerfile: .deploy/Dockerfile

@@ -483,10 +483,25 @@ def _emit_halt_report(*, report: HaltReport, run_id: str, run_dir: Path) -> None
     print(json.dumps(payload, indent=2, default=str))
 
 
-# Halt-reason → process exit code. 0 means "clean shutdown for a benign
-# reason"; non-zero indicates an external condition the operator may care
-# about (target outage, HMAC misconfig, provider outage, content filter
-# stuck). Cost cap + coverage met + max iterations + interrupt all exit 0.
+# Halt-reason → process exit code.
+#
+# F9 V2 (Tate, Wed evening): All halt reasons now map to exit 0. The
+# orchestrator's halt is BY DEFINITION intentional — it made a deliberate
+# decision to stop based on cost, signal, coverage, target state, or
+# config. Communicating "I halted intentionally" to Docker via exit 0
+# lets the compose file's `restart: on-failure` policy do the right
+# thing: don't auto-restart intentional halts, do auto-restart real
+# crashes (uncaught Python exceptions exit non-zero by default).
+#
+# The PRIOR mapping (TARGET_CIRCUIT_OPEN → 5, etc.) caused a restart
+# loop during the W2 Anthropic credit-balance outage on 2026-05-13: each
+# halt → Docker restarts → new Red Team gen → new target 500 → halt →
+# Docker restarts → ... burning OpenRouter on the Red Team gen each
+# cycle. Mapping these to 0 makes the daemon stay halted until operator
+# intervention, which is the correct response to extended target outages.
+#
+# Operators read the halt reason from the daemon's stdout HaltReport
+# JSON or the run manifest, not from the exit code.
 _HALT_EXIT_CODES: dict[HaltReason, int] = {
     HaltReason.COST_CAP_REACHED: 0,
     HaltReason.COST_CAP_PROJECTED_BREACH: 0,
@@ -495,10 +510,10 @@ _HALT_EXIT_CODES: dict[HaltReason, int] = {
     HaltReason.COVERAGE_FLOOR_MET_NO_OPEN: 0,
     HaltReason.NO_ELIGIBLE_CATEGORIES: 0,
     HaltReason.SIGNAL_INTERRUPT: 0,
-    HaltReason.HMAC_REJECTED: 4,
-    HaltReason.TARGET_CIRCUIT_OPEN: 5,
-    HaltReason.CONTENT_FILTER_JAMMED: 6,
-    HaltReason.PROVIDER_OUTAGE_PERSISTENT: 7,
+    HaltReason.HMAC_REJECTED: 0,
+    HaltReason.TARGET_CIRCUIT_OPEN: 0,
+    HaltReason.CONTENT_FILTER_JAMMED: 0,
+    HaltReason.PROVIDER_OUTAGE_PERSISTENT: 0,
 }
 
 

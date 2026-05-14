@@ -292,7 +292,7 @@ docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml logs -f r
 | Concern | Local-only state | Droplet-deployed state |
 |---|---|---|
 | Public URL | None — local-only | `https://redteam-142-93-242-40.nip.io` |
-| Process supervision | Manual `python -m ...` | Docker `restart: always` (compose) |
+| Process supervision | Manual `python -m ...` | Docker `restart: on-failure:3` (compose) — auto-recovers from genuine crashes; respects intentional halts (cost cap, target circuit open, etc.) without burning OpenRouter on retry loops |
 | Tunnel to target | Required (SSH `-L 8000`) | Not needed — Docker DNS (`agent:8000`) |
 | Secret management | `.env` in repo dir | `.env` in `/opt/redteam/` (mode 600, outside repo) |
 | Artifact persistence | Local filesystem | Bind-mounted `/opt/redteam/evals/` survives container restarts |
@@ -303,7 +303,7 @@ docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml logs -f r
 
 | Phase 3 concern | Why not at MVP |
 |---|---|
-| Process supervision beyond `restart: always` | systemd / k8s deferred — Docker restart-policy is good enough at this scale |
+| Process supervision beyond `restart: on-failure:3` | systemd / k8s deferred — Docker restart-policy is good enough at this scale |
 | Secret management beyond `.env` | Vault / SSM is for multi-host or compliance-bound deployments |
 | Long-term artifact storage (S3) | Filesystem fine for 100s of runs; cost analysis at Final makes the call for 10K+ |
 | Failure alerting | Status URL is the surface for now; Slack/PagerDuty integration is Phase 3 |

@@ -410,7 +410,16 @@ def test_continuous_writes_run_artifacts_to_disk(
 # ---------------------------------------------------------------------------
 
 
-def test_exit_code_zero_for_clean_halts() -> None:
+def test_exit_code_zero_for_all_intentional_halts() -> None:
+    """F9 V2: every halt reason exits 0 — the orchestrator's decision to
+    halt is BY DEFINITION intentional. Non-zero exits are reserved for
+    actual Python crashes (uncaught exceptions, OOM). This lets the
+    Docker compose `restart: on-failure` policy distinguish "operator
+    should resume" from "Docker should auto-retry."
+
+    Operators read the halt reason from the HaltReport JSON or run
+    manifest, not from the exit code.
+    """
     for reason in (
         HaltReason.COST_CAP_REACHED,
         HaltReason.COST_CAP_PROJECTED_BREACH,
@@ -419,15 +428,27 @@ def test_exit_code_zero_for_clean_halts() -> None:
         HaltReason.COVERAGE_FLOOR_MET_NO_OPEN,
         HaltReason.NO_ELIGIBLE_CATEGORIES,
         HaltReason.SIGNAL_INTERRUPT,
+        HaltReason.HMAC_REJECTED,
+        HaltReason.TARGET_CIRCUIT_OPEN,
+        HaltReason.CONTENT_FILTER_JAMMED,
+        HaltReason.PROVIDER_OUTAGE_PERSISTENT,
     ):
-        assert _exit_code_for_halt(reason) == 0
+        assert _exit_code_for_halt(reason) == 0, (
+            f"HaltReason.{reason.name} should exit 0 per F9 V2 design"
+        )
 
 
-def test_exit_code_distinct_for_failure_halts() -> None:
-    assert _exit_code_for_halt(HaltReason.HMAC_REJECTED) == 4
-    assert _exit_code_for_halt(HaltReason.TARGET_CIRCUIT_OPEN) == 5
-    assert _exit_code_for_halt(HaltReason.CONTENT_FILTER_JAMMED) == 6
-    assert _exit_code_for_halt(HaltReason.PROVIDER_OUTAGE_PERSISTENT) == 7
+def test_exit_code_default_nonzero_for_unmapped_reason() -> None:
+    """The fallback in `_exit_code_for_halt` returns 1 for any halt
+    reason not in `_HALT_EXIT_CODES`. This defends against a future
+    HaltReason being added without an explicit exit-code entry — Docker
+    treats it as a failure and the meta-test in `test_orchestrator_meta`
+    catches the mapping gap on next run.
+    """
+    from unittest.mock import MagicMock
+
+    fake_reason = MagicMock(spec=HaltReason)
+    assert _exit_code_for_halt(fake_reason) == 1
 
 
 # ---------------------------------------------------------------------------
