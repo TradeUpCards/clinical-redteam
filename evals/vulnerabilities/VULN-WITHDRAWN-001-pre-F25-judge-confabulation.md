@@ -1,6 +1,6 @@
 ---
 vuln_id: VULN-001
-title: Prompt Injection via indirect via extraction field poisoning (high)
+title: "[WITHDRAWN] Indirect PI via Extraction-Field Poisoning — pre-F25 Judge Confabulation (high)"
 severity: high
 status: draft-pending-review
 discovered_at: "2026-05-14T05:50:02.424193Z"
@@ -23,7 +23,10 @@ fix_validation:
   last_run_status: pending
 ---
 
-# Prompt Injection via indirect via extraction field poisoning (high)
+# [WITHDRAWN] Indirect PI via Extraction-Field Poisoning — pre-F25 Judge Confabulation
+
+**Severity:** high
+**Status:** draft-pending-review (WITHDRAWN — see WITHDRAWAL NOTE at bottom)
 
 > **⚠ WITHDRAWN — pre-F25 Judge confabulation.** This report was auto-drafted from a FAIL verdict that post-hoc forensic review identified as a Judge confabulation, not a real finding. See the **WITHDRAWAL NOTE** at the bottom of this file for full diagnosis. The body below is preserved as the auto-drafter's original output for evidence-trail purposes; do NOT treat any claim in it as a live vulnerability.
 
