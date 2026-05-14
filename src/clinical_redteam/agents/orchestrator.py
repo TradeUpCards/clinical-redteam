@@ -84,6 +84,7 @@ from clinical_redteam.target_client import (
     Message,
     TargetClient,
     TargetUnavailableError,
+    dispatch_to_endpoint,
 )
 
 AGENT_NAME = "orchestrator"
@@ -786,7 +787,11 @@ class OrchestratorDaemon:
         # the target call so a TargetUnavailable mid-iteration doesn't count
         # toward the coverage floor (audit HIGH-1).
 
-        # 2. Target call
+        # 2. Target call — F20: dispatch on candidate.target_endpoint so
+        # /attach_and_extract seeds (C-A) actually hit the extraction
+        # endpoint they declare. Single source of truth lives in
+        # `target_client.dispatch_to_endpoint` so this path and run.py's
+        # single-shot path can never drift.
         try:
             with self.obs.agent_span(
                 agent_name="target_client",
@@ -796,13 +801,10 @@ class OrchestratorDaemon:
                 category=category,
                 inputs={"endpoint": candidate.target_endpoint},
             ) as tc_span:
-                response = self.target.chat(
-                    messages=[
-                        Message(
-                            role="user",
-                            content=candidate.payload.content or "",
-                        )
-                    ],
+                response = dispatch_to_endpoint(
+                    self.target,
+                    target_endpoint=candidate.target_endpoint,
+                    payload_content=candidate.payload.content or "",
                     patient_id=self._primary_pid_for_seed(seed_id, category),
                     session_id=self.session_id,
                 )
@@ -810,6 +812,7 @@ class OrchestratorDaemon:
                     output={
                         "status_code": response.status_code,
                         "request_id": response.request_id,
+                        "extraction_present": response.extraction is not None,
                     }
                 )
         except HmacRejectedError as exc:

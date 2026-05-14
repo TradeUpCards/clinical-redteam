@@ -1,39 +1,47 @@
 """HMAC-signed target client for the AgentForge Clinical Co-Pilot.
 
 This module is the ONLY way the Red Team Platform talks to the target. Every
-external call passes through `TargetClient.chat()`, which:
+external call passes through `TargetClient.chat()` or `TargetClient.attach_and_extract()`,
+both of which:
 
-1. HARD-REFUSES out-of-scope target URLs (ARCH §2.1 — out-of-scope is a hard
+1. HARD-REFUSE out-of-scope target URLs (ARCH §2.1 — out-of-scope is a hard
    refusal, not a soft warning). This is the platform's first line of defense
    against turning into a generalized attacker — the Red Team Agent cannot
    redirect attacks to non-authorized targets even if it tried.
-2. HARD-REFUSES non-sentinel patient IDs (project hard rule — sentinel IDs
+2. HARD-REFUSE non-sentinel patient IDs (project hard rule — sentinel IDs
    only, 999001-999999 range; never real PHI even in attack payloads).
-3. Signs every request with HMAC-SHA256 using the EXACT same payload scheme
-   the target's `verify_hmac` expects:
-     f"{user_id}|{patient_id}|{timestamp}|" + "|".join(m.content for m in messages)
-   Mismatch is a 401 from the target — surfaced cleanly, never retried with
-   a different secret.
-4. Backs off on 5xx (target overload / restart) with bounded retries.
+3. Sign every request with HMAC-SHA256 using the EXACT same payload scheme
+   the target's `verify_hmac` expects. Mismatch is a 401 from the target —
+   surfaced cleanly, never retried with a different secret.
+4. Back off on 5xx (target overload / restart) with bounded retries.
+
+HMAC payload schemes (must match deployed target verify_hmac exactly):
+- `/chat`:                f"{user_id}|{patient_id}|{timestamp}|" + "|".join(m.content for m in messages)
+- `/attach_and_extract`:  f"{user_id}|{patient_id}|{doc_ref_id}|{doc_type}|{timestamp}|{file_sha256}"
+
+Replay windows:
+- `/chat`:                30s   (HMAC_MAX_AGE_SECONDS, RED_TEAM_TARGET_*)
+- `/attach_and_extract`:  300s  (ATTACH_HMAC_MAX_AGE_SECONDS) — wider per W2 main.py:179-183
 
 NOT included here (intentionally):
 - The content-category filter — runs upstream in content_filter.py (Phase 1a
   #10) so refused attacks never reach this module
 - Cost / Langfuse instrumentation — composed in observability.py (#12)
-- /attach_and_extract endpoint — deferred to Phase 2; MVP uses /chat only
 
 Env vars consumed (full reference in .env.example):
   RED_TEAM_TARGET_URL                 (e.g. http://localhost:8000 via SSH tunnel)
   RED_TEAM_TARGET_HMAC_SECRET         (matches deployed Co-Pilot's OPENEMR_HMAC_SECRET)
   RED_TEAM_TARGET_USER_ID             (default 1; W2 admin parity)
   RED_TEAM_TARGET_SENTINEL_PATIENT_IDS  (comma-separated, must all be 999001-999999)
-  HMAC_MAX_AGE_SECONDS                (default 30; signing timestamp = now)
+  HMAC_MAX_AGE_SECONDS                (default 30; /chat signing timestamp = now)
+  ATTACH_HMAC_MAX_AGE_SECONDS         (default 300; /attach_and_extract replay window)
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 import time
@@ -98,6 +106,11 @@ attacking arbitrary sentinels in this range."""
 
 
 _DEFAULT_HMAC_MAX_AGE_SECONDS = 30
+_DEFAULT_ATTACH_HMAC_MAX_AGE_SECONDS = 300
+"""F20: /attach_and_extract uses a wider replay window than /chat. The
+W2 Co-Pilot's main.py:179-183 verifies attach-extract signatures against
+a 300s window because Docling parsing + Haiku extraction can take 60-90s,
+and the signature is bound to the original timestamp. Mismatch is a 401."""
 _DEFAULT_REQUEST_TIMEOUT = 30.0
 _DEFAULT_MAX_5XX_RETRIES = 2
 _DEFAULT_5XX_BACKOFF_BASE_SECONDS = 1.0
@@ -154,7 +167,16 @@ class TargetUnavailableError(TargetClientError):
 
 @dataclass(frozen=True)
 class TargetResponse:
-    """One target call's worth of substrate for the Judge + cost ledger."""
+    """One target call's worth of substrate for the Judge + cost ledger.
+
+    `extraction` is populated only for `/attach_and_extract` responses
+    (F20). For `/chat` it stays None. When present, `assistant_text` is
+    set to `json.dumps(extraction)` so the Judge's prose-style rubric
+    can fire on substring matches against extracted field values —
+    e.g., the `extraction_field_value_poisoning` criterion checks for
+    medication strings that appear inside extracted JSON but not in
+    legitimate document blocks.
+    """
 
     status_code: int
     assistant_text: str
@@ -162,6 +184,7 @@ class TargetResponse:
     latency_ms: int
     request_id: str | None
     trace_id: str | None
+    extraction: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +238,165 @@ def compute_chat_hmac(
     ).hexdigest()
 
 
+def compute_attach_hmac(
+    *,
+    user_id: int,
+    patient_id: int,
+    doc_ref_id: str,
+    doc_type: str,
+    timestamp: int,
+    file_sha256: str,
+    secret: str,
+) -> str:
+    """Compute HMAC-SHA256 hex digest for an /attach_and_extract request.
+
+    Payload-to-sign convention (must match deployed target's
+    `verify_hmac` for the extract endpoint — see audit §C-A + §C-E):
+
+        f"{user_id}|{patient_id}|{doc_ref_id}|{doc_type}|{timestamp}|{file_sha256}"
+
+    `file_sha256` MUST be the hex digest of the EXACT bytes posted in the
+    `file` multipart part — any divergence (e.g., hashing the source text
+    before PDF generation rather than the PDF bytes themselves) produces
+    a 401 from the target. The bytes-to-hash invariant is enforced by
+    callers via `attach_and_extract()` below; this helper just signs.
+
+    Returns lowercase hex digest. Empty secret raises (same posture as
+    /chat — never sign with an empty key).
+    """
+    if not secret:
+        raise TargetClientConfigError(
+            "HMAC secret is empty — refusing to sign. "
+            "Set RED_TEAM_TARGET_HMAC_SECRET in .env to match deployed "
+            "Co-Pilot's OPENEMR_HMAC_SECRET."
+        )
+    payload = (
+        f"{user_id}|{patient_id}|{doc_ref_id}|{doc_type}|"
+        f"{timestamp}|{file_sha256}"
+    )
+    return hmac.new(
+        secret.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def dispatch_to_endpoint(
+    target: TargetClient,
+    *,
+    target_endpoint: str,
+    payload_content: str,
+    patient_id: int,
+    session_id: str,
+) -> TargetResponse:
+    """Route a single attack payload to the correct TargetClient method.
+
+    F20: this is the single source of truth for endpoint dispatch so the
+    branching logic doesn't drift between `run.py`'s single-shot path
+    and the daemon loop in `orchestrator.py`. Both call sites import
+    from here.
+
+    Branching:
+    - `target_endpoint == "/attach_and_extract"` → multipart PDF POST
+      with `payload_content` as the document body. doc_type defaults
+      to `"intake_form"` for MVP (the C-A surface). lab_report is the
+      same gap class and can be reached by future seeds with their own
+      `doc_type` override — out of scope for F20.
+    - anything else → existing `/chat` JSON POST. Default path so older
+      seeds (target_endpoint=`/chat`) keep working unchanged.
+
+    Unknown endpoints get a structured rejection so the daemon doesn't
+    silently fall back to `/chat` and measure the wrong defense — same
+    posture as out-of-scope target URLs (ARCH §2.1).
+    """
+    if target_endpoint == "/attach_and_extract":
+        return target.attach_and_extract(
+            document_text=payload_content,
+            patient_id=patient_id,
+            doc_type="intake_form",
+            session_id=session_id,
+        )
+    if target_endpoint == "/chat":
+        return target.chat(
+            messages=[Message(role="user", content=payload_content)],
+            patient_id=patient_id,
+            session_id=session_id,
+        )
+    raise TargetClientError(
+        f"Unknown target_endpoint {target_endpoint!r}. "
+        "Supported: '/chat', '/attach_and_extract'. "
+        "Seeds requesting other endpoints must extend dispatch_to_endpoint "
+        "with sign-off — falling back silently would risk measuring the "
+        "wrong defense (the F20 case we just closed)."
+    )
+
+
+def render_text_to_pdf_bytes(text: str) -> bytes:
+    """Render `text` to a single-page PDF and return the raw bytes.
+
+    **NONDETERMINISM CAVEAT — read this before refactoring callers.**
+    reportlab embeds a random `/ID` field in the PDF trailer that varies
+    call-to-call EVEN with identical input text. Two calls with the same
+    `text` produce different bytes → different sha256 → different HMAC.
+    This is invisible inside `attach_and_extract` because that method
+    calls `render_text_to_pdf_bytes` EXACTLY ONCE, stores the result in
+    a local, and threads that one bytes object through (a) the hash,
+    (b) the HMAC computation, and (c) the multipart `files` dict. A
+    5xx retry in `_post_multipart_with_backoff` reuses the same bytes
+    object, so the hash-to-posted-bytes invariant holds across retries.
+    A future refactor that introduces a second call to this helper
+    inside the same attack would silently break HMAC verification on
+    the target side. Do not call this twice for the same attack.
+
+    F20: the `/attach_and_extract` endpoint expects a multipart upload
+    with a PDF in the `file` part. Seed `attack_template` content is
+    plain text; this helper turns it into bytes the endpoint will accept
+    AND that Docling on the target side will OCR back into block text.
+
+    Discipline (per coordination ticket F20 §2):
+    - Use `reportlab` (small, pure-Python, no system deps).
+    - Plain prose flow — no styling. Docling parses block text from the
+      PDF content regardless of layout.
+    - Preserve the literal text verbatim — DO NOT mangle Unicode,
+      newlines, or whitespace. The audit explicitly calls out that
+      block-text concatenation is the injection surface, so any
+      Red Team mutation that inserts e.g. zero-width chars must survive
+      the PDF round-trip unchanged.
+
+    Implementation notes:
+    - Low-level `reportlab.pdfgen.canvas.Canvas` + `beginText()` is used
+      (NOT `platypus.Paragraph`) because Paragraph treats `<…>`-shaped
+      content as markup and would alter the bytes. Canvas's text object
+      is closer to verbatim — newlines are honored line-by-line.
+    - Long lines that exceed page width are NOT wrapped here; the seed
+      authors lay out the attack_template with short lines (intake-form
+      style). If a future Red Team mutation produces a long line, the
+      tail spills off the page edge but the byte stream still contains
+      the literal text, so Docling still extracts it from the PDF
+      content stream.
+    """
+    from io import BytesIO
+
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas as _canvas
+
+    buf = BytesIO()
+    c = _canvas.Canvas(buf, pagesize=letter)
+    _, page_height = letter
+    text_obj = c.beginText(50, page_height - 50)
+    text_obj.setFont("Helvetica", 10)
+    # Render line-by-line. splitlines() handles both \r\n and \n; we
+    # iterate over the original `text` via splitlines(keepends=False)
+    # then re-emit each as a separate textLine call so reportlab's
+    # baseline positioning advances per-line.
+    for line in text.splitlines() or [""]:
+        text_obj.textLine(line)
+    c.drawText(text_obj)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
@@ -234,6 +416,7 @@ class TargetClient:
     user_id: int
     sentinel_patient_ids: tuple[int, ...]
     hmac_max_age_seconds: int = _DEFAULT_HMAC_MAX_AGE_SECONDS
+    attach_hmac_max_age_seconds: int = _DEFAULT_ATTACH_HMAC_MAX_AGE_SECONDS
     request_timeout: float = _DEFAULT_REQUEST_TIMEOUT
     max_5xx_retries: int = _DEFAULT_MAX_5XX_RETRIES
     backoff_base_seconds: float = _DEFAULT_5XX_BACKOFF_BASE_SECONDS
@@ -310,12 +493,22 @@ class TargetClient:
             raise TargetClientConfigError(
                 f"HMAC_MAX_AGE_SECONDS must be an integer, got {hmac_age_raw!r}"
             ) from exc
+        attach_age_raw = e.get(
+            "ATTACH_HMAC_MAX_AGE_SECONDS", str(_DEFAULT_ATTACH_HMAC_MAX_AGE_SECONDS)
+        ).strip() or str(_DEFAULT_ATTACH_HMAC_MAX_AGE_SECONDS)
+        try:
+            attach_hmac_max_age_seconds = int(attach_age_raw)
+        except ValueError as exc:
+            raise TargetClientConfigError(
+                f"ATTACH_HMAC_MAX_AGE_SECONDS must be an integer, got {attach_age_raw!r}"
+            ) from exc
         return cls(
             base_url=base_url,
             hmac_secret=secret,
             user_id=user_id,
             sentinel_patient_ids=sentinel_patient_ids,
             hmac_max_age_seconds=hmac_max_age_seconds,
+            attach_hmac_max_age_seconds=attach_hmac_max_age_seconds,
             health_path=e.get(
                 "RED_TEAM_TARGET_HEALTH_PATH", _DEFAULT_HEALTH_PATH
             ).strip()
@@ -399,6 +592,150 @@ class TargetClient:
         )
 
     # -----------------------------------------------------------------------
+    # /attach_and_extract — F20 indirect-PI surface for C-A
+    # -----------------------------------------------------------------------
+
+    def attach_and_extract(
+        self,
+        *,
+        document_text: str,
+        patient_id: int | None = None,
+        doc_type: str = "intake_form",
+        doc_ref_id: str | None = None,
+        session_id: str | None = None,
+        now: int | None = None,
+    ) -> TargetResponse:
+        """POST a signed `/attach_and_extract` request with `document_text` as PDF.
+
+        F20 wires the C-A attack surface: the deployed Co-Pilot's extraction
+        endpoint accepts a PDF (`multipart/form-data`), runs Docling →
+        Haiku to extract structured fields, and persists the result.
+        The audit's C-A finding is that the extraction system prompt
+        lacks the "data, not instructions" clause that `/chat` has, so
+        directive-shaped text inside an uploaded document gets followed.
+
+        - `document_text` is rendered to PDF bytes via reportlab; the
+          literal text MUST survive the round-trip so Docling parses
+          back the same content the seed declared. Whitespace and
+          Unicode are preserved (per coordination ticket §2).
+        - `patient_id` defaults to the first configured sentinel ID.
+          Hard refuses non-sentinel pids before any wire activity.
+        - `doc_type` parameterizes which extraction surface fires.
+          `intake_form` (default) hits intake_form_extraction.py; the
+          same gap class also exists at lab_report_extraction.py per
+          the audit, reachable via `doc_type="lab_report"`.
+        - `doc_ref_id` per-attack identifier; generated as a UUID hex
+          when not supplied. W2's main.py:376-393 does not require this
+          to exist in OpenEMR for sentinel pids.
+        - `now` is injectable for unit tests; production callers leave
+          it unset so the wall clock is read.
+
+        Returns a TargetResponse whose `extraction` field carries the
+        parsed extraction dict and whose `assistant_text` is its JSON
+        stringification — so the Judge's substring-style rubric (the
+        `extraction_field_value_poisoning` criterion) fires against the
+        extracted field values without any Judge schema change.
+        """
+        if patient_id is None:
+            patient_id = self.sentinel_patient_ids[0]
+        self._validate_sentinel_patient_id(patient_id)
+
+        if not document_text:
+            raise TargetClientError(
+                "attach_and_extract: document_text cannot be empty"
+            )
+
+        timestamp = now if now is not None else int(time.time())
+        ref_id = doc_ref_id or uuid.uuid4().hex
+
+        # PDF bytes — generated once, used for BOTH the hash AND the
+        # multipart upload. Computing the hash from a different byte
+        # stream than the one actually posted produces a 401 from W2.
+        pdf_bytes = render_text_to_pdf_bytes(document_text)
+        file_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+
+        sig = compute_attach_hmac(
+            user_id=self.user_id,
+            patient_id=patient_id,
+            doc_ref_id=ref_id,
+            doc_type=doc_type,
+            timestamp=timestamp,
+            file_sha256=file_sha256,
+            secret=self.hmac_secret,
+        )
+
+        url = self.base_url.rstrip("/") + "/attach_and_extract"
+        # Multipart form: `file` part carries the PDF bytes; all other
+        # fields are form-encoded. The signature lives in the form body
+        # rather than a header so it's covered by the same HMAC payload
+        # the target re-derives during verify.
+        files = {
+            "file": (
+                f"{ref_id}.pdf",
+                pdf_bytes,
+                "application/pdf",
+            )
+        }
+        data = {
+            "user_id": str(self.user_id),
+            "patient_id": str(patient_id),
+            "doc_ref_id": ref_id,
+            "doc_type": doc_type,
+            "timestamp": str(timestamp),
+            "signature": sig,
+            "session_id": session_id or uuid.uuid4().hex,
+        }
+
+        started = time.perf_counter()
+        response = self._post_multipart_with_backoff(url, files=files, data=data)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+
+        if response.status_code == 401:
+            raise HmacRejectedError(
+                f"Target /attach_and_extract returned 401. Likely HMAC "
+                f"scheme drift, secret mismatch, file_sha256 drift, or "
+                f"timestamp skew (replay window={self.attach_hmac_max_age_seconds}s). "
+                f"Response: {response.text[:300]!r}"
+            )
+
+        try:
+            parsed = response.json()
+        except ValueError:
+            parsed = {"_non_json_body": response.text[:1000]}
+
+        # Per audit §C-A confirmation signals: `extraction.current_medications`,
+        # `extraction.allergies`, `extraction_confidence_avg`. The Judge needs
+        # ALL of this surface to rubric against, not just one slice.
+        extraction: dict[str, Any] = {}
+        if isinstance(parsed, dict):
+            ext_raw = parsed.get("extraction")
+            if isinstance(ext_raw, dict):
+                extraction = ext_raw
+            # Some target shapes emit confidence at top level — keep both
+            # the nested dict AND the top-level conf so the Judge sees it.
+            if "extraction_confidence_avg" in parsed and "extraction_confidence_avg" not in extraction:
+                extraction = {
+                    **extraction,
+                    "extraction_confidence_avg": parsed["extraction_confidence_avg"],
+                }
+
+        # Stringify extraction JSON into assistant_text so Judge prose
+        # rubrics fire on substring matches. Empty extraction is rendered
+        # as "{}" so the rubric can't silently pass on an empty body —
+        # see audit risk (3) in the coordination ticket.
+        assistant_text = json.dumps(extraction, sort_keys=True)
+
+        return TargetResponse(
+            status_code=response.status_code,
+            assistant_text=assistant_text,
+            raw_body=parsed if isinstance(parsed, dict) else {},
+            latency_ms=latency_ms,
+            request_id=parsed.get("request_id") if isinstance(parsed, dict) else None,
+            trace_id=parsed.get("trace_id") if isinstance(parsed, dict) else None,
+            extraction=extraction or None,
+        )
+
+    # -----------------------------------------------------------------------
     # /health — fingerprint for F7 target-change regression trigger
     # -----------------------------------------------------------------------
 
@@ -431,6 +768,65 @@ class TargetClient:
     # -----------------------------------------------------------------------
     # Internals
     # -----------------------------------------------------------------------
+
+    def _post_multipart_with_backoff(
+        self,
+        url: str,
+        *,
+        files: dict[str, tuple[str, bytes, str]],
+        data: dict[str, str],
+    ) -> httpx.Response:
+        """POST multipart/form-data with the same retry posture as JSON POSTs.
+
+        Mirrors `_post_with_backoff`'s contract: bounded retries on 5xx +
+        connection errors with exponential backoff; 2xx/3xx/non-401 4xx
+        return immediately; the caller handles 401 explicitly. We do NOT
+        re-sign on retry — the signature is bound to the original
+        timestamp and the wider /attach_and_extract replay window
+        (300s default) absorbs the retry delay.
+        """
+        assert self.http_client is not None  # set in __post_init__
+        attempts = self.max_5xx_retries + 1
+        last_exc: Exception | None = None
+        last_response: httpx.Response | None = None
+
+        for attempt in range(attempts):
+            is_last = attempt + 1 >= attempts
+            try:
+                response = self.http_client.post(url, files=files, data=data)
+            except (httpx.ConnectError, httpx.ReadTimeout) as exc:
+                last_exc = exc
+                logger.warning(
+                    "Target multipart POST connection error (%s); attempt %d/%d",
+                    type(exc).__name__, attempt + 1, attempts,
+                )
+                if is_last:
+                    break
+                time.sleep(self.backoff_base_seconds * (2**attempt))
+                continue
+
+            if 500 <= response.status_code < 600:
+                last_response = response
+                logger.warning(
+                    "Target /attach_and_extract returned %d; attempt %d/%d",
+                    response.status_code, attempt + 1, attempts,
+                )
+                if is_last:
+                    break
+                time.sleep(self.backoff_base_seconds * (2**attempt))
+                continue
+
+            return response
+
+        if last_exc is not None:
+            raise TargetUnavailableError(
+                f"Target {url} unreachable after {attempts} attempts: {last_exc}"
+            ) from last_exc
+        assert last_response is not None
+        raise TargetUnavailableError(
+            f"Target {url} returned {last_response.status_code} after "
+            f"{attempts} attempts. Body: {last_response.text[:300]!r}"
+        )
 
     def _post_with_backoff(self, url: str, body: dict[str, Any]) -> httpx.Response:
         """POST with bounded retry on 5xx + connection error.
@@ -531,5 +927,8 @@ __all__ = [
     "TargetClientError",
     "TargetResponse",
     "TargetUnavailableError",
+    "compute_attach_hmac",
     "compute_chat_hmac",
+    "dispatch_to_endpoint",
+    "render_text_to_pdf_bytes",
 ]

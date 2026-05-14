@@ -29,3 +29,10 @@ langfuse>=2.40.0
 # locally (python -m clinical_redteam.web) and in the deployed Docker
 # container (gunicorn fronts it; see .deploy/Dockerfile).
 flask>=3.0.0
+
+# PDF generation for /attach_and_extract uploads (F20).
+# Pure-Python, no system deps. Used in clinical_redteam.target_client
+# to convert seed attack_template text into a multipart/form-data PDF
+# body so the W2 Co-Pilot's extraction endpoint receives the exact
+# surface the audit identified — see THREAT_MODEL.md §C-A.
+reportlab>=4.0.0
