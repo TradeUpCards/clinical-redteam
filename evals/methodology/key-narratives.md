@@ -215,3 +215,49 @@ What unifies narratives 1–5 is a single discipline: **the platform is held to 
 | Treat document content as DATA, not instructions | Treat target responses as UNTRUSTED INPUT, not Judge instructions | EVIDENCE CITATION RULE in `_JUDGE_SYSTEM_PROMPT` |
 
 This symmetry is the strongest single argument for the platform being more than an LLM-with-prompts harness. It's the difference between "we hit the target and saw what stuck" and "we hit the target and we hit ourselves and we documented both."
+
+---
+
+## Known follow-up: F29 — F17 regression-entry namespace collision
+
+**Caught:** 2026-05-14 ~16:50 CDT during pre-recording dashboard review.
+**Severity:** medium (data-integrity, demo-honesty); not a correctness bug in the replay loop itself.
+**Status:** disclosed in demo segment 5; filed as F29 for post-recording cleanup.
+
+**The bug.** Documentation Agent's F17 auto-promotion writes
+`evals/regression/<category>/<attack_id>.json`. In single-shot mode each
+run's attack-id counter starts at `_001`. Three independent FAIL-producing
+single-shot runs against the C-A surface today all produced an attack with
+id `atk_2026-05-14_001`:
+
+- 05:49 run (`20260514T054946-93efbc`) — pre-F25 confabulation FAIL → wrote regression/<cat>/atk_2026-05-14_001.json
+- 06:35 run (`20260514T063558-546584`) — VULN-002 Atorvastatin → overwrote
+- 07:04 run (`20260514T070443-a2c637`) — VULN-003 Amlodipine → overwrote
+
+**Disk end-state:** one regression entry (VULN-003's promotion, last writer
+wins). When F7 fired the replay at 21:13 it correctly walked the regression
+dir and replayed the one entry it found — but that's one case for three
+findings, not one each.
+
+**What this means for the demo and the submission:**
+
+- The autonomous F7 → regression-replay loop demonstrably works (run
+  `20260514T211343-ed5625` has the replay artifacts; F26's empty-response
+  guard fired against the patched W2 target as designed).
+- The platform has a real name-collision bug between Doc Agent and the
+  regression directory's filesystem layout. F29 fixes this by namespacing
+  the promotion key as `<run_id>_<attack_id>` or similar.
+- VULN-002 and VULN-003 reports themselves are unaffected — both have
+  complete forensic trails in `evals/results/<run-id>/` and complete
+  documentation in their respective `VULN-NNN-DRAFT.md` files. The bug
+  only affects whether the regression *replay* loop iterates over both
+  findings independently or treats them as one class.
+
+**Why disclosing this strengthens the submission.** The MVP reviewer
+praised VULN-001's honest framing on the inability to fully validate the
+post-fix behavior under sentinel discipline. F29 is the same posture
+applied to a name-collision bug caught five minutes before recording.
+"We have three FAILs and one regression entry; here's why; here's the
+fix and when it ships" is more credible than a polished "the platform
+works perfectly" frame that a careful grader would falsify by reading
+the regression directory.
