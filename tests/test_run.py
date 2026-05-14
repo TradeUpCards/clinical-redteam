@@ -28,7 +28,9 @@ from clinical_redteam.agents.orchestrator import HaltReason
 from clinical_redteam.agents.red_team import AttackRefusedError
 from clinical_redteam.run import (
     DEFAULT_SEEDS_BY_CATEGORY,
+    DailyBudgetExceededError,
     _build_parser,
+    _check_daily_budget,
     _exit_code_for_halt,
     _run_continuous,
     main,
@@ -700,3 +702,142 @@ def test_help_does_not_crash(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--continuous" in captured
     assert "--max-budget" in captured
     assert "--halt-on-empty-categories" in captured
+
+
+# ---------------------------------------------------------------------------
+# F19 — Daily budget gate (rolling-24h aggregate cap)
+# ---------------------------------------------------------------------------
+
+
+from datetime import timedelta  # noqa: E402
+
+
+def _write_run(results: Path, run_time: datetime, total_usd: float | None,
+               key: str = "total_usd", suffix: str = "abc123") -> Path:
+    """Create a fake run dir at `run_time` with a cost-ledger.json."""
+    run_id = run_time.strftime("%Y%m%dT%H%M%S") + "-" + suffix
+    run_dir = results / run_id
+    run_dir.mkdir(parents=True)
+    if total_usd is not None:
+        (run_dir / "cost-ledger.json").write_text(
+            json.dumps({key: total_usd}), encoding="utf-8"
+        )
+    return run_dir
+
+
+def test_daily_budget_no_results_dir_returns_zero(tmp_path: Path) -> None:
+    """Missing results dir is treated as zero spend — first-run case."""
+    total, count = _check_daily_budget(tmp_path / "does_not_exist", cap_usd=50.0)
+    assert total == 0.0
+    assert count == 0
+
+
+def test_daily_budget_empty_results_dir_returns_zero(tmp_path: Path) -> None:
+    """Empty results dir returns zero (no runs to count)."""
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0)
+    assert total == 0.0
+    assert count == 0
+
+
+def test_daily_budget_sums_recent_runs(tmp_path: Path) -> None:
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    _write_run(tmp_path, now - timedelta(hours=1), 5.50, suffix="aaa")
+    _write_run(tmp_path, now - timedelta(hours=10), 3.25, suffix="bbb")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(8.75)
+    assert count == 2
+
+
+def test_daily_budget_excludes_runs_older_than_24h(tmp_path: Path) -> None:
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    # 23h59m ago — counted
+    _write_run(tmp_path, now - timedelta(hours=23, minutes=59), 4.00, suffix="new")
+    # 24h01m ago — excluded
+    _write_run(tmp_path, now - timedelta(hours=24, minutes=1), 99.00, suffix="old")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(4.00)
+    assert count == 1
+
+
+def test_daily_budget_supports_total_cost_usd_legacy_key(tmp_path: Path) -> None:
+    """Older ledgers wrote `total_cost_usd`; gate must read both shapes."""
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    _write_run(tmp_path, now - timedelta(hours=2), 7.00,
+               key="total_cost_usd", suffix="legacy")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(7.00)
+    assert count == 1
+
+
+def test_daily_budget_raises_at_cap(tmp_path: Path) -> None:
+    """At-or-above cap raises (>= so 50.0 == 50.0 trips)."""
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    _write_run(tmp_path, now - timedelta(hours=1), 30.00, suffix="aaa")
+    _write_run(tmp_path, now - timedelta(hours=2), 20.00, suffix="bbb")
+    with pytest.raises(DailyBudgetExceededError) as exc:
+        _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert "50.00" in str(exc.value)
+    assert "$50.00" in str(exc.value)
+    assert "MAX_DAILY_COST_USD" in str(exc.value)
+
+
+def test_daily_budget_raises_when_above_cap(tmp_path: Path) -> None:
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    _write_run(tmp_path, now - timedelta(hours=3), 75.50, suffix="big")
+    with pytest.raises(DailyBudgetExceededError):
+        _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+
+
+def test_daily_budget_skips_malformed_ledger_silently(tmp_path: Path) -> None:
+    """Corrupted JSON should not crash the gate — skip + continue."""
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    run_dir = _write_run(tmp_path, now - timedelta(hours=1), 0.0, suffix="bad")
+    (run_dir / "cost-ledger.json").write_text("{not valid json", encoding="utf-8")
+    _write_run(tmp_path, now - timedelta(hours=2), 3.00, suffix="good")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(3.00)
+    assert count == 1
+
+
+def test_daily_budget_skips_run_dir_without_ledger(tmp_path: Path) -> None:
+    """Run dir without cost-ledger.json (e.g., crashed before ledger write)
+    must be ignored, not counted as zero."""
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    _write_run(tmp_path, now - timedelta(hours=1), total_usd=None, suffix="noledger")
+    _write_run(tmp_path, now - timedelta(hours=2), 2.50, suffix="withledger")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(2.50)
+    assert count == 1
+
+
+def test_daily_budget_skips_unparseable_dir_names(tmp_path: Path) -> None:
+    """Stray dirs (manual mkdir, test fixtures) must not crash the gate."""
+    (tmp_path / "not-a-run-id").mkdir()
+    (tmp_path / "20260513-bad-format").mkdir()  # wrong timestamp shape
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    _write_run(tmp_path, now - timedelta(hours=1), 1.00, suffix="ok")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(1.00)
+    assert count == 1
+
+
+def test_daily_budget_skips_non_directory_entries(tmp_path: Path) -> None:
+    """Stray files in results/ (e.g., .gitkeep) must be ignored."""
+    (tmp_path / ".gitkeep").write_text("", encoding="utf-8")
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == 0.0
+    assert count == 0
+
+
+def test_daily_budget_handles_non_numeric_spend(tmp_path: Path) -> None:
+    """A ledger with a non-numeric total field must be skipped, not crash."""
+    now = datetime(2026, 5, 13, 12, 0, 0, tzinfo=UTC)
+    run_dir = _write_run(tmp_path, now - timedelta(hours=1), 0.0, suffix="weird")
+    (run_dir / "cost-ledger.json").write_text(
+        json.dumps({"total_usd": "not-a-number"}), encoding="utf-8"
+    )
+    _write_run(tmp_path, now - timedelta(hours=2), 4.00, suffix="ok")
+    total, count = _check_daily_budget(tmp_path, cap_usd=50.0, now=now)
+    assert total == pytest.approx(4.00)
+    assert count == 1

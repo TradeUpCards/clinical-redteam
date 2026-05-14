@@ -31,7 +31,7 @@ import logging
 import os
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -310,6 +310,23 @@ def _run_continuous(args: argparse.Namespace) -> int:
         print("ERROR: RED_TEAM_TARGET_URL is required. Populate .env.", file=sys.stderr)
         return 2
 
+    # F19: daily budget gate — refuse to start if aggregate 24h spend
+    # exceeds MAX_DAILY_COST_USD (default $50). Prevents the 2026-05-13
+    # surprise-burn class of failure where restart-loop or unsupervised
+    # operation chews through credits while operator sleeps.
+    daily_cap = float(os.getenv("MAX_DAILY_COST_USD", "50"))
+    try:
+        spent_24h, runs_counted = _check_daily_budget(results_dir, daily_cap)
+    except DailyBudgetExceededError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 8
+    if runs_counted > 0:
+        logger.info(
+            "daily budget OK: $%.2f spent in last 24h across %d run(s); "
+            "cap $%.2f, $%.2f remaining",
+            spent_24h, runs_counted, daily_cap, daily_cap - spent_24h,
+        )
+
     cost_cap_usd = args.max_budget if args.max_budget is not None else float(
         os.getenv("MAX_SESSION_COST_USD", "10")
     )
@@ -575,6 +592,20 @@ def _run_single_shot(args: argparse.Namespace) -> int:
         print("ERROR: RED_TEAM_TARGET_URL is required. Populate .env.", file=sys.stderr)
         return 2
 
+    # F19: daily budget gate — same as continuous mode.
+    daily_cap = float(os.getenv("MAX_DAILY_COST_USD", "50"))
+    try:
+        spent_24h, runs_counted = _check_daily_budget(results_dir, daily_cap)
+    except DailyBudgetExceededError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 8
+    if runs_counted > 0:
+        logger.info(
+            "daily budget OK: $%.2f spent in last 24h across %d run(s); "
+            "cap $%.2f, $%.2f remaining",
+            spent_24h, runs_counted, daily_cap, daily_cap - spent_24h,
+        )
+
     seed = load_seed(seed_id, category=args.category, evals_dir=evals_dir)
     primary_pid = int(seed["primary_patient_id"])
 
@@ -751,6 +782,78 @@ def _run_single_shot(args: argparse.Namespace) -> int:
 
 def _new_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
+
+
+# ---------------------------------------------------------------------------
+# F19 — Daily budget gate
+# ---------------------------------------------------------------------------
+
+
+class DailyBudgetExceededError(RuntimeError):
+    """Aggregate spend across all runs in the last 24h crossed the daily cap."""
+
+
+def _check_daily_budget(
+    results_dir: Path,
+    cap_usd: float,
+    now: datetime | None = None,
+) -> tuple[float, int]:
+    """Refuse to start a new run if last-24h aggregate cost exceeds cap.
+
+    Reads `cost-ledger.json` from every run dir under `results_dir` whose
+    embedded timestamp falls in the last 24h, sums `total_usd`. Raises
+    DailyBudgetExceededError if the sum is >= `cap_usd`.
+
+    Returns (current_total_usd, num_runs_counted) for logging by the caller
+    when budget is OK.
+
+    Tracks ONLY OpenRouter-side cost (what cost-ledger captures). Target-
+    side LLM provider cost (e.g., Anthropic on the W2 Co-Pilot side) is
+    opaque to this gate by design — instrument those separately if needed.
+    """
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(hours=24)
+    total_24h = 0.0
+    runs_counted = 0
+    if not results_dir.exists():
+        return 0.0, 0
+    for run_dir in results_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+        # Run ID format: YYYYMMDDTHHMMSS-<6hex>. Parse the prefix.
+        prefix = run_dir.name.split("-")[0]
+        try:
+            run_time = datetime.strptime(prefix, "%Y%m%dT%H%M%S").replace(tzinfo=UTC)
+        except ValueError:
+            continue
+        if run_time < cutoff:
+            continue
+        ledger_path = run_dir / "cost-ledger.json"
+        if not ledger_path.exists():
+            continue
+        try:
+            with ledger_path.open(encoding="utf-8") as f:
+                ledger = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        # Two key shapes for historical compatibility:
+        # - cost-ledger.json may write `total_usd` (current shape)
+        # - older shape was `total_cost_usd` — fall through to both
+        spend = ledger.get("total_usd") or ledger.get("total_cost_usd") or 0.0
+        try:
+            total_24h += float(spend)
+            runs_counted += 1
+        except (TypeError, ValueError):
+            continue
+    if total_24h >= cap_usd:
+        raise DailyBudgetExceededError(
+            f"Aggregate OpenRouter spend in last 24h is ${total_24h:.2f} "
+            f"(across {runs_counted} runs); >= MAX_DAILY_COST_USD cap of "
+            f"${cap_usd:.2f}. Refusing to start a new run. Override by "
+            f"setting MAX_DAILY_COST_USD=<higher_value> in /opt/redteam/.env "
+            f"and restarting, or wait until the rolling-24h window ages out."
+        )
+    return total_24h, runs_counted
 
 
 if __name__ == "__main__":
