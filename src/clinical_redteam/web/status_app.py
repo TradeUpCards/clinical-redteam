@@ -196,7 +196,20 @@ def _list_vulnerabilities(
     out: list[dict[str, Any]] = []
     for p in sorted(root.glob("VULN-*.md")):
         meta = _parse_vuln_header(p)
-        vuln_id = meta.get("vuln_id") or _vuln_id_from_filename(p.stem)
+        withdrawn = p.stem.startswith("VULN-WITHDRAWN-")
+        # For non-withdrawn entries, frontmatter `vuln_id` is authoritative
+        # (it's the Doc Agent's allocated identifier). For withdrawn
+        # entries the frontmatter preserves the ORIGINAL pre-withdrawal
+        # id as historical record (e.g., a re-classified "VULN-001 →
+        # VULN-WITHDRAWN-001" keeps `vuln_id: VULN-001` in its frontmatter)
+        # — surfacing that to callers would collide with the active
+        # VULN-001. The filename-derived id (`VULN-WITHDRAWN-NNN`) is
+        # the post-withdrawal canonical handle and matches the dashboard
+        # row the user sees, so prefer it here.
+        if withdrawn:
+            vuln_id = _vuln_id_from_filename(p.stem) or meta.get("vuln_id")
+        else:
+            vuln_id = meta.get("vuln_id") or _vuln_id_from_filename(p.stem)
         replay = (replay_index or {}).get(vuln_id) if vuln_id else None
         out.append(
             {
@@ -207,7 +220,7 @@ def _list_vulnerabilities(
                 "severity": meta.get("severity"),
                 "status": meta.get("status"),
                 "discovered_at": meta.get("discovered_at"),
-                "withdrawn": p.stem.startswith("VULN-WITHDRAWN-"),
+                "withdrawn": withdrawn,
                 "last_replay": replay,
             }
         )

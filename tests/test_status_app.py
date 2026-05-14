@@ -849,6 +849,60 @@ def test_aggregate_regression_replays_orphan_verdict_skipped(
     assert snapshot == {}
 
 
+def test_list_vulnerabilities_withdrawn_does_not_collide_with_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a WITHDRAWN file preserves its original frontmatter
+    `vuln_id: VULN-001` as historical record AND a fresh active
+    VULN-001 exists, the dashboard must not surface two entries
+    claiming the same vuln_id. Withdrawn entries should report the
+    filename-derived `VULN-WITHDRAWN-NNN` so machine readers can
+    differentiate.
+
+    Reproduces the observed live-deploy collision: VULN-WITHDRAWN-001-pre-F25-...
+    carries `vuln_id: VULN-001` in its frontmatter (since it IS the
+    original-but-reclassified VULN-001), colliding with the fresh
+    C-7 VULN-001 in `/api/vulnerabilities` output.
+    """
+    vulns_dir = tmp_path / "vulnerabilities"
+    vulns_dir.mkdir()
+    # Fresh active VULN-001 (post-withdrawal re-allocation).
+    _write_vuln(
+        vulns_dir / "VULN-001-c7-cross-patient.md",
+        "---\n"
+        "vuln_id: VULN-001\n"
+        "title: C-7 Cross-Patient PHI Leakage\n"
+        "severity: high\n"
+        "status: filed\n"
+        "discovered_at: 2026-05-12T00:00:00+00:00\n"
+        "discovered_by_attack_id: atk_2026-05-12_001\n"
+        "target_version_sha: x\n---\n# Body\n",
+    )
+    # Withdrawn file whose frontmatter still says VULN-001 (historical).
+    _write_vuln(
+        vulns_dir / "VULN-WITHDRAWN-001-pre-F25-judge-confabulation.md",
+        "---\n"
+        "vuln_id: VULN-001\n"  # original id preserved as historical record
+        "title: Pre-F25 judge confabulation (withdrawn)\n"
+        "severity: high\n"
+        "status: draft-pending-review\n"
+        "discovered_at: 2026-05-14T05:50:00+00:00\n"
+        "discovered_by_attack_id: atk_2026-05-14_001\n"
+        "target_version_sha: x\n---\n# Body\n",
+    )
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    vulns = status_app._list_vulnerabilities()
+    by_id = {v["vuln_id"]: v for v in vulns}
+    # No collision — two distinct vuln_ids surface.
+    assert set(by_id) == {"VULN-001", "VULN-WITHDRAWN-001"}
+    assert by_id["VULN-001"]["withdrawn"] is False
+    assert by_id["VULN-WITHDRAWN-001"]["withdrawn"] is True
+    # Active entry kept its frontmatter title; withdrawn kept its own
+    # frontmatter title (just gets a different vuln_id surfaced).
+    assert "C-7" in by_id["VULN-001"]["title"]
+    assert "Pre-F25" in by_id["VULN-WITHDRAWN-001"]["title"]
+
+
 def test_lookup_parent_vuln_id_rejects_path_traversal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
