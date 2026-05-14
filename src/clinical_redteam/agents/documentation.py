@@ -342,6 +342,17 @@ class DocumentationAgent:
 
         canonical = canonical_dir or _default_canonical_dir()
         canonical.mkdir(parents=True, exist_ok=True)
+        # F17: regression dir lives alongside the canonical vuln dir under
+        # the same `evals/` root. Tests that override `canonical_dir` (e.g.,
+        # to `tmp_path / "vulnerabilities"`) automatically isolate the
+        # regression writes to `tmp_path / "regression"` — no env-var
+        # gymnastics required. Production runs (canonical_dir=None) fall
+        # through to the env-driven `_default_regression_dir()`.
+        regression = (
+            canonical.parent / "regression"
+            if canonical_dir is not None
+            else _default_regression_dir()
+        )
 
         allocated_id = vuln_id or next_vuln_id(canonical)
         severity = derive_severity(
@@ -369,8 +380,22 @@ class DocumentationAgent:
             else []
         )
 
+        # F17 — point the frontmatter's `regression_test_path` at the actual
+        # auto-promoted JSON file (written below). The legacy YAML naming
+        # (pre-F17) referenced a path that was never written. Now the
+        # linkage is honest: opening this path on disk yields the replay
+        # entry that the F7 fingerprint-change loop will execute.
+        #
+        # CONVENTION: this field is always REPO-ROOT-RELATIVE
+        # (`evals/regression/...`), independent of any `EVALS_DIR` env-var
+        # override. Tests that override `EVALS_DIR` (e.g., to a tmp_path)
+        # will see the frontmatter point at the repo-root path while the
+        # actual file lives under `$EVALS_DIR/regression/...`. This is
+        # intentional — the frontmatter is a public artifact read by
+        # humans and by the dashboard, so the path must be reproducible
+        # against the canonical layout, not a per-environment override.
         regression_path = (
-            f"evals/regression/{attack.category}/{allocated_id}.yaml"
+            f"evals/regression/{attack.category}/{attack.attack_id}.json"
         )
 
         frontmatter = VulnerabilityReportFrontmatter(
@@ -403,6 +428,21 @@ class DocumentationAgent:
 
         canonical_path = canonical / f"{allocated_id}-DRAFT.md"
         atomic_write_text(canonical_path, render_vuln_report(frontmatter, body))
+
+        # F17 — autonomous regression-suite ingestion. Immediately after the
+        # canonical vuln markdown lands, write a structured regression entry
+        # so the next-run replay loop has a fresh confirmed exploit to
+        # exercise. Idempotent + atomic; failures are logged but do NOT
+        # abort the draft (the markdown is the primary artifact).
+        _promote_attack_to_regression(
+            attack=attack,
+            verdict=verdict,
+            severity=severity,
+            vuln_id=allocated_id,
+            timestamp=timestamp,
+            regression_dir=regression,
+            run_handle=run_handle,
+        )
 
         snapshot_path: Path | None = None
         if run_handle is not None:
@@ -614,6 +654,152 @@ def _default_canonical_dir() -> Path:
     return Path(os.getenv("EVALS_DIR", "./evals")) / "vulnerabilities"
 
 
+def _default_regression_dir() -> Path:
+    """F17 — root for autonomous regression-suite ingestion."""
+    return Path(os.getenv("EVALS_DIR", "./evals")) / "regression"
+
+
+REGRESSION_ENTRY_SCHEMA_VERSION = "1"
+"""F17 — bump when the auto-promoted regression JSON schema changes
+incompatibly. Readers check this before re-executing an entry."""
+
+
+def _promote_attack_to_regression(
+    *,
+    attack: AttackCandidate,
+    verdict: JudgeVerdict,
+    severity: Severity,
+    vuln_id: str,
+    timestamp: datetime,
+    regression_dir: Path,
+    run_handle: RunHandle | None,
+) -> Path | None:
+    """F17 — autonomous regression-suite ingestion.
+
+    Writes `evals/regression/<category>/<attack_id>.json` with everything the
+    F7 replay loop needs to re-execute the exact attack later: the source
+    attack identity, the verdict context that justified inclusion, the
+    target fingerprint at the moment of promotion, and (most importantly)
+    the PHI-scrubbed attack payload.
+
+    Contract per coordination ticket `F17-aria-doc-agent-auto-regression-promote`:
+
+    - Trigger: called from `DocumentationAgent.draft()` after the markdown
+      lands, exclusively for `verdict ∈ {fail, partial}` (NoDraftNeededError
+      raises earlier for pass/uncertain, so we never reach here for them).
+    - Idempotency: if the target file already exists, skip silently.
+      First promotion wins; re-running doc agent on the same attack_id
+      MUST NOT churn the regression suite.
+    - Atomicity: use `atomic_write_text` (write-to-`.tmp` then `os.replace`).
+      A mid-write crash leaves no half-file behind.
+    - PHI safety: `attack.payload.content` is run through `scrub_phi` before
+      it lands in the regression JSON — same surface that already applies
+      everywhere else in DocumentationAgent's output pipeline.
+    - Directory shape: flat per category. NO subcategory subdirectory.
+    - Errors: never abort the draft — the markdown is the primary artifact
+      and the regression entry is a secondary autonomous side effect. Log
+      loudly and continue.
+
+    Caveats:
+
+    - `seed_id` is read from `attack.mutation_parent`. For MVP this is
+      correct — Red Team's mutation chain is depth-1 (seed → one variant),
+      so mutation_parent IS the seed_id. If multi-hop mutations land in
+      Phase 2 (mutation_depth > 1, parent is another attack_id rather
+      than a seed), this mapping breaks. Adding `seed_id` as a first-class
+      field on `AttackCandidate` requires schema sign-off — RAISE at that
+      point rather than silently allowing wrong replay routing.
+
+    Returns the path written, or None when skipped (idempotent re-promotion
+    OR a logged-and-swallowed failure).
+    """
+    cat_dir = regression_dir / attack.category
+    target_path = cat_dir / f"{attack.attack_id}.json"
+
+    try:
+        cat_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning(
+            "F17: could not create regression dir %s (%s); skipping promotion",
+            cat_dir, exc,
+        )
+        return None
+
+    if target_path.exists():
+        logger.info(
+            "F17: regression entry %s already exists; skipping promotion "
+            "(idempotent re-promotion of attack_id=%s)",
+            target_path, attack.attack_id,
+        )
+        return None
+
+    source_run_id = run_handle.run_id if run_handle is not None else "unknown"
+    target_fingerprint: str = "unknown"
+    if run_handle is not None:
+        try:
+            manifest = run_handle.load_manifest()
+            fp = manifest.get("target_fingerprint")
+            if isinstance(fp, str) and fp:
+                target_fingerprint = fp
+        except Exception as exc:  # noqa: BLE001
+            # Legacy manifests without the F7 fingerprint field, or transient
+            # read failure. Promotion still succeeds with "unknown" — the
+            # replay loop's fingerprint-change detector is per-run, not
+            # per-entry, so a missing per-entry fingerprint is recoverable.
+            logger.warning(
+                "F17: could not read target_fingerprint from manifest (%s); "
+                "promoting with fingerprint='unknown'",
+                exc,
+            )
+
+    payload_text = attack.payload.content or ""
+    scrubbed_payload = scrub_phi(payload_text)
+
+    entry = {
+        "regression_entry_version": REGRESSION_ENTRY_SCHEMA_VERSION,
+        "promoted_from_vuln_id": vuln_id,
+        "promoted_at": timestamp.isoformat(),
+        "source_run_id": source_run_id,
+        "source_attack_id": attack.attack_id,
+        "category": attack.category,
+        "subcategory": attack.subcategory,
+        "owasp_id": attack.owasp_id,
+        "asi_id": attack.asi_id,
+        "atlas_technique_id": attack.atlas_technique_id,
+        "severity_at_promotion": severity,
+        "judge_verdict_at_promotion": verdict.verdict,
+        "judge_confidence_at_promotion": verdict.confidence,
+        "target_fingerprint_at_promotion": target_fingerprint,
+        "attack": {
+            "payload": scrubbed_payload,
+            "target_endpoint": attack.target_endpoint,
+            # `patient_id` is resolved by the replay loader from the seed
+            # YAML keyed by `seed_id` — not carried in AttackCandidate.
+            "patient_id": None,
+            "seed_id": attack.mutation_parent,
+            "mutation_parent": attack.mutation_parent,
+            "mutation_depth": attack.mutation_depth,
+        },
+    }
+
+    try:
+        atomic_write_text(target_path, json.dumps(entry, indent=2) + "\n")
+    except OSError as exc:
+        logger.warning(
+            "F17: atomic_write_text failed for %s (%s); regression entry "
+            "for attack_id=%s NOT promoted — operator can re-run doc agent "
+            "or hand-file the entry",
+            target_path, exc, attack.attack_id,
+        )
+        return None
+
+    logger.info(
+        "F17: auto-promoted attack_id=%s to %s (vuln=%s, severity=%s)",
+        attack.attack_id, target_path, vuln_id, severity,
+    )
+    return target_path
+
+
 def _fallback_sections(
     *,
     attack: AttackCandidate,
@@ -741,6 +927,7 @@ promotion to filed; ARCH §2.4 trust gate).
 __all__ = [
     "AGENT_NAME",
     "AGENT_VERSION",
+    "REGRESSION_ENTRY_SCHEMA_VERSION",
     "DocumentationAgent",
     "DocumentationError",
     "DraftResult",

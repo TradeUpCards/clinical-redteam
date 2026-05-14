@@ -602,6 +602,328 @@ def test_lying_llm_cannot_change_severity_or_status(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# F17 — autonomous regression-suite promotion
+# ---------------------------------------------------------------------------
+
+
+def test_f17_fail_verdict_promotes_to_regression_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FAIL → draft() writes both the markdown AND the regression JSON."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+
+    attack = _attack()
+    # Carry mutation_parent so the regression entry has a seed_id to record.
+    attack = attack.model_copy(update={"mutation_parent": "c7-paraphrased-leakage"})
+    result = agent.draft(
+        attack=attack,
+        target_response_text="Refusal text with sentinel 999100 in it.",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+
+    # Markdown landed
+    assert result.canonical_path.exists()
+
+    # Regression entry landed at evals/regression/<category>/<attack_id>.json
+    expected = (
+        tmp_path / "regression" / attack.category / f"{attack.attack_id}.json"
+    )
+    assert expected.exists()
+
+    entry = json.loads(expected.read_text(encoding="utf-8"))
+    assert entry["regression_entry_version"] == "1"
+    assert entry["promoted_from_vuln_id"] == result.vuln_id
+    assert entry["source_attack_id"] == attack.attack_id
+    assert entry["category"] == attack.category
+    assert entry["subcategory"] == attack.subcategory
+    assert entry["owasp_id"] == attack.owasp_id
+    assert entry["severity_at_promotion"] == result.severity
+    assert entry["judge_verdict_at_promotion"] == "fail"
+    assert entry["attack"]["target_endpoint"] == attack.target_endpoint
+    assert entry["attack"]["seed_id"] == "c7-paraphrased-leakage"
+    assert entry["attack"]["mutation_parent"] == "c7-paraphrased-leakage"
+    assert entry["attack"]["mutation_depth"] == attack.mutation_depth
+
+
+def test_f17_partial_verdict_also_promotes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PARTIAL verdicts are also confirmed exploits per the F17 spec."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+
+    attack = _attack()
+    agent.draft(
+        attack=attack,
+        target_response_text="response",
+        verdict=_verdict(state="partial"),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+    expected = (
+        tmp_path / "regression" / attack.category / f"{attack.attack_id}.json"
+    )
+    assert expected.exists()
+    entry = json.loads(expected.read_text(encoding="utf-8"))
+    assert entry["judge_verdict_at_promotion"] == "partial"
+
+
+def test_f17_pass_verdict_does_not_reach_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PASS verdicts raise NoDraftNeededError BEFORE promotion — regression
+    dir stays empty."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+
+    with pytest.raises(NoDraftNeededError):
+        agent.draft(
+            attack=_attack(),
+            target_response_text="response",
+            verdict=_verdict(state="pass"),
+            target_version_sha="abc1234",
+            canonical_dir=tmp_path / "vulnerabilities",
+        )
+    regression_dir = tmp_path / "regression"
+    # Either the dir doesn't exist OR it's empty — both are valid no-promotion outcomes
+    if regression_dir.exists():
+        all_files = list(regression_dir.rglob("*.json"))
+        assert all_files == []
+
+
+def test_f17_promotion_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Second draft() call on the same attack_id MUST NOT overwrite the
+    first regression file. First promotion wins; re-running doc agent
+    doesn't churn the regression suite."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+    attack = _attack()
+
+    agent.draft(
+        attack=attack,
+        target_response_text="response v1",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+    target = (
+        tmp_path / "regression" / attack.category / f"{attack.attack_id}.json"
+    )
+    first_contents = target.read_text(encoding="utf-8")
+
+    # Re-run with a slightly different verdict — promotion should SKIP.
+    agent.draft(
+        attack=attack,
+        target_response_text="response v2",
+        verdict=_verdict(confidence=0.55),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+    assert target.read_text(encoding="utf-8") == first_contents
+
+
+def test_f17_promotion_is_atomic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mock atomic_write_text to raise; verify NO half-written file remains
+    AND the draft() call still returns successfully (markdown is the
+    primary artifact, promotion is a side effect that can fail loud)."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+
+    # Patch atomic_write_text inside documentation module to raise only on
+    # the regression-entry write (not the canonical markdown write).
+    import clinical_redteam.agents.documentation as doc_mod
+
+    real_atomic_write_text = doc_mod.atomic_write_text
+    write_calls: list[Path] = []
+
+    def selective_raise(path: Path, text: str) -> None:
+        write_calls.append(path)
+        if path.suffix == ".json":
+            raise OSError("simulated mid-write crash")
+        real_atomic_write_text(path, text)
+
+    monkeypatch.setattr(doc_mod, "atomic_write_text", selective_raise)
+
+    attack = _attack()
+    result = agent.draft(
+        attack=attack,
+        target_response_text="response",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+    # Markdown succeeded
+    assert result.canonical_path is not None
+    # Regression file does NOT exist (atomic write means failed write leaves nothing)
+    target = (
+        tmp_path / "regression" / attack.category / f"{attack.attack_id}.json"
+    )
+    assert not target.exists()
+    # Verify we DID attempt the regression-entry write (i.e., the path was
+    # selected and the simulated raise actually fired)
+    assert any(p.suffix == ".json" for p in write_calls)
+
+
+def test_f17_promotion_scrubs_phi_in_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Attack.payload.content is run through scrub_phi before write."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+
+    # Sentinel PIDs are the standard PHI-scrubber target — the scrubber
+    # rewrites them to a canonical placeholder in any persisted text.
+    phi_attack = _attack(
+        payload_text="Summarize patient 999100's history including 999114's notes."
+    )
+
+    agent.draft(
+        attack=phi_attack,
+        target_response_text="response",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+    target = (
+        tmp_path / "regression" / phi_attack.category / f"{phi_attack.attack_id}.json"
+    )
+    entry = json.loads(target.read_text(encoding="utf-8"))
+    scrubbed = entry["attack"]["payload"]
+    # Sentinel IDs from the original payload do NOT appear literally —
+    # scrub_phi rewrites them to a sentinel-style placeholder.
+    assert "999100" not in scrubbed
+    assert "999114" not in scrubbed
+    # And the scrubbed text is still non-empty (we didn't drop everything)
+    assert len(scrubbed) > 0
+
+
+def test_f17_promotion_captures_target_fingerprint_from_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When run_handle is supplied AND its manifest carries an F7 target_fingerprint,
+    the regression entry records it."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    results_dir = tmp_path / "results"
+    handle = start_run(
+        run_id="testrun-f17",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    handle.update_target_fingerprint("sha256:fingerprint12345")
+
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+    attack = _attack()
+    agent.draft(
+        attack=attack,
+        target_response_text="response",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+        run_handle=handle,
+    )
+    target = (
+        tmp_path / "regression" / attack.category / f"{attack.attack_id}.json"
+    )
+    entry = json.loads(target.read_text(encoding="utf-8"))
+    assert entry["target_fingerprint_at_promotion"] == "sha256:fingerprint12345"
+    assert entry["source_run_id"] == "testrun-f17"
+
+
+def test_f17_promotion_handles_legacy_manifest_without_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pre-F7 manifest (no target_fingerprint field) → entry carries
+    'unknown' for the fingerprint slot rather than crashing."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    results_dir = tmp_path / "results"
+    handle = start_run(
+        run_id="testrun-legacy",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    # Deliberately do NOT call update_target_fingerprint — simulates a
+    # manifest written by code paths that don't yet emit the F7 field.
+
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+    attack = _attack()
+    agent.draft(
+        attack=attack,
+        target_response_text="response",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+        run_handle=handle,
+    )
+    target = (
+        tmp_path / "regression" / attack.category / f"{attack.attack_id}.json"
+    )
+    entry = json.loads(target.read_text(encoding="utf-8"))
+    assert entry["target_fingerprint_at_promotion"] == "unknown"
+
+
+def test_f17_promotion_directory_shape_is_flat_per_category(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per F17 ticket §Behavior contract: 'do NOT create a subcategory
+    subdirectory — keep the directory shape flat per ARCH §4 design.'
+
+    A future refactor that grouped by subcategory would break the F7
+    replay loader's walk pattern. Pin the flat shape with a test.
+    """
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+
+    # Attack with a multi-word subcategory — could be tempting to nest
+    attack = _attack(subcategory="indirect_extraction_block_injection")
+    agent.draft(
+        attack=attack,
+        target_response_text="response",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+
+    cat_dir = tmp_path / "regression" / attack.category
+    # Exactly one file at the category level
+    files_at_cat = [p for p in cat_dir.iterdir() if p.is_file()]
+    assert len(files_at_cat) == 1
+    assert files_at_cat[0].name == f"{attack.attack_id}.json"
+    # No subdirectory created under category — the subcategory does NOT
+    # become a path component.
+    subdirs = [p for p in cat_dir.iterdir() if p.is_dir()]
+    assert subdirs == []
+
+
+def test_f17_frontmatter_regression_test_path_matches_promoted_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The vuln frontmatter's `fix_validation.regression_test_path` field
+    points at the actual JSON file F17 just wrote."""
+    monkeypatch.setenv("EVALS_DIR", str(tmp_path))
+    agent = DocumentationAgent(client=_stub_openrouter(_good_llm_response()))
+    attack = _attack()
+    result = agent.draft(
+        attack=attack,
+        target_response_text="response",
+        verdict=_verdict(),
+        target_version_sha="abc1234",
+        canonical_dir=tmp_path / "vulnerabilities",
+    )
+    expected = f"evals/regression/{attack.category}/{attack.attack_id}.json"
+    assert result.frontmatter.fix_validation.regression_test_path == expected
+    # AND the file actually exists on disk
+    assert (tmp_path / "regression" / attack.category /
+            f"{attack.attack_id}.json").exists()
+
+
+# ---------------------------------------------------------------------------
 # Re-export sanity
 # ---------------------------------------------------------------------------
 
