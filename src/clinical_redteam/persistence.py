@@ -50,6 +50,14 @@ MANIFEST_FILENAME = "manifest.json"
 ATTACKS_SUBDIR = "attacks"
 VERDICTS_SUBDIR = "verdicts"
 VULNERABILITIES_SUBDIR = "vulnerabilities"
+RESPONSES_SUBDIR = "responses"
+"""F23 — forensic capture of the target's actual response per attack.
+Stored separately from `attacks/` (the AttackCandidate sent to target)
+and `verdicts/` (the Judge's evaluation) so a post-hoc reviewer can
+distinguish: target returned what (responses/), Judge said what
+(verdicts/), and whether those agree (e.g., did Judge cite content
+that wasn't in the response?). Load-bearing for diagnosing the
+Judge-confabulation case that surfaced in atk_2026-05-14_001."""
 REGRESSION_REPLAY_ATTACKS_SUBDIR = "regression_replay/attacks"
 REGRESSION_REPLAY_VERDICTS_SUBDIR = "regression_replay/verdicts"
 """F7 — target-change regression replay artifacts. Kept in a separate
@@ -166,6 +174,10 @@ class RunHandle:
     def regression_replay_verdicts_dir(self) -> Path:
         return self.run_dir / REGRESSION_REPLAY_VERDICTS_SUBDIR
 
+    @property
+    def responses_dir(self) -> Path:
+        return self.run_dir / RESPONSES_SUBDIR
+
     # ------------------------------------------------------------------ writes
 
     def save_attack(self, attack: AttackCandidate) -> Path:
@@ -182,6 +194,54 @@ class RunHandle:
         payload = verdict.model_dump(mode="json")
         self._save_unique(path, payload, identity=verdict.verdict_id)
         self._touch_manifest_index("verdict_ids", verdict.verdict_id)
+        return path
+
+    def save_response(
+        self,
+        *,
+        attack_id: str,
+        status_code: int,
+        latency_ms: int,
+        request_id: str | None,
+        trace_id: str | None,
+        assistant_text: str,
+        extraction: dict[str, Any] | None,
+    ) -> Path:
+        """F23 — persist the target's response per attack for forensic review.
+
+        Writes `<run-dir>/responses/<attack_id>.json` with the fields a
+        post-hoc reviewer needs to reproduce what the Judge actually saw.
+        Manifest-indexed via `response_ids` (parallel to `attack_ids` and
+        `verdict_ids`).
+
+        **Load-bearing forensic invariant:** the `assistant_text` argument
+        MUST be the exact same Python string that the Judge consumes via
+        `target_response_text`. The caller is responsible for threading
+        the same variable through both this save_response call AND the
+        subsequent `judge.evaluate(...)` call — no transformations,
+        re-encodings, or copies between the two uses. Without this
+        guarantee, the persisted artifact diverges from what the Judge
+        graded and the forensic record is useless. Tests pin this with
+        a byte-exact roundtrip assertion.
+
+        Called from `run.py` (single-shot) and from
+        `orchestrator.py:_run_one_iteration` (continuous mode) immediately
+        after the target call and BEFORE the Judge step, so a Judge crash
+        still leaves the response on disk for post-mortem.
+        """
+        path = self.responses_dir / f"{attack_id}.json"
+        payload: dict[str, Any] = {
+            "attack_id": attack_id,
+            "status_code": status_code,
+            "latency_ms": latency_ms,
+            "request_id": request_id,
+            "trace_id": trace_id,
+            "assistant_text": assistant_text,
+            "extraction": extraction,
+            "received_at": _now_iso(),
+        }
+        self._save_unique(path, payload, identity=attack_id)
+        self._touch_manifest_index("response_ids", attack_id)
         return path
 
     def save_regression_replay_attack(self, attack: AttackCandidate) -> Path:
@@ -324,6 +384,9 @@ def start_run(
     handle.attacks_dir.mkdir(parents=True, exist_ok=True)
     handle.verdicts_dir.mkdir(parents=True, exist_ok=True)
     handle.vulnerabilities_dir.mkdir(parents=True, exist_ok=True)
+    # F23: per-attack response capture. Mkdir up-front so a reader can
+    # rely on the directory existing whether or not any responses landed.
+    handle.responses_dir.mkdir(parents=True, exist_ok=True)
     # F7: regression-replay subtree. Created up-front so a manifest readers
     # can rely on the directory existing whether or not replay fired.
     handle.regression_replay_attacks_dir.mkdir(parents=True, exist_ok=True)
@@ -350,6 +413,7 @@ def start_run(
         "attack_ids": [],
         "verdict_ids": [],
         "vuln_ids": [],
+        "response_ids": [],  # F23 — forensic response capture
         "regression_replay_attack_ids": [],  # F7
         "regression_replay_verdict_ids": [],  # F7
         "metadata": dict(extra_metadata or {}),
@@ -458,6 +522,7 @@ __all__ = [
     "PersistenceError",
     "REGRESSION_REPLAY_ATTACKS_SUBDIR",
     "REGRESSION_REPLAY_VERDICTS_SUBDIR",
+    "RESPONSES_SUBDIR",
     "RunHandle",
     "VERDICTS_SUBDIR",
     "VULNERABILITIES_SUBDIR",
