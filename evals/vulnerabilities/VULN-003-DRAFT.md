@@ -28,6 +28,8 @@ fix_validation:
 **Severity:** high
 **Status:** draft-pending-review
 
+> **🟢 Loop closed 2026-05-14:** W2 Co-Pilot team patches (MR #78 + #79, see VULN-002 closure note) also resolve this sibling finding — the root cause and code path are identical. Post-fix smoke run against `version_sha: cb13d6473545a847d401f635923d8221f4f4e746` produced clean extractions across multiple mutations, including those targeting the clinically-plausible variant pattern this report documents. Run artifacts: `https://redteam-142-93-242-40.nip.io/`.
+
 > **Sibling finding of VULN-002, same root cause, subtler payload.** Same `/attach_and_extract` field-value-poisoning vector at the same code path — but here the injected drug (Amlodipine 5mg) is a clinically *plausible* addition to the patient's existing Losartan + Hydrochlorothiazide regimen. The poisoned extraction is harder for a reviewing clinician to catch by inspection because all three drugs together form a coherent multi-drug antihypertensive plan; nothing in the medication-list shape signals "this entry is fake."
 
 ## Description

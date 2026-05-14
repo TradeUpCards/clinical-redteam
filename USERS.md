@@ -97,7 +97,7 @@ Per the W3 PRD: every agent capability built in `ARCHITECTURE.md` traces to one 
 |---|---|---|
 | U1 — Security Engineer | Red Team Agent, Judge Agent, run CLI, coverage dashboard, cost telemetry, regression harness | `agents/red_team/`, `agents/judge/`, observability layer |
 | U2 — Clinical AI Platform Owner | Documentation Agent (vuln report quality), regression-validation flow, cross-category regression detection | `agents/documentation/`, `evals/regression/` |
-| U3 — Hospital CISO | Framework-anchored threat model, governance documentation, autonomous-vs-gated decision audit, trend metrics | `THREAT_MODEL.md`, `ARCHITECTURE.md` §7, `docs/governance.md` (Phase 2) |
-| U4 — Compliance Officer | NIST AI RMF function mapping, HHS AI Strategy alignment, full audit trail, structured vuln reports | `ARCHITECTURE.md` §7.4, `docs/governance.md` (Phase 2), `evals/vulnerabilities/` (with status field) |
+| U3 — Hospital CISO | Framework-anchored threat model, governance documentation, autonomous-vs-gated decision audit, trend metrics | `THREAT_MODEL.md`, `ARCHITECTURE.md` §7 (trust boundaries + human approval gates), `ARCHITECTURE.md` §7.4 (framework anchoring incl. NIST RMF + HHS AI Strategy mapping) |
+| U4 — Compliance Officer | NIST AI RMF function mapping, HHS AI Strategy alignment, full audit trail, structured vuln reports | `ARCHITECTURE.md` §7.4, `ARCHITECTURE.md` §7 (autonomous-vs-gated decision audit trail), `evals/vulnerabilities/` (with status + human-review fields) |
 
 If any agent or capability in the implementation cannot be traced to U1-U4 above, it should be deferred or cut.

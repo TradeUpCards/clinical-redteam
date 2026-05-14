@@ -39,6 +39,8 @@ Using both is the difference between "we hit the target with prompts and saw wha
 
 The platform exercises both endpoints of the target's HTTP surface — `/chat` (single-turn + multi-turn) and `/attach_and_extract` (the indirect-injection surface mapped by the F16 audit). F20 wired the second endpoint into the target client so attack seeds can route to either.
 
+**Real findings + cross-team fix loop, validated end-to-end on 2026-05-14.** The audit-derived seeds for the `/attach_and_extract` surface (F8a, F20-wired) produced two confirmed novel vulnerabilities — **VULN-002** (Atorvastatin injection landed in a patient's medication list with confidence 0.90) and **VULN-003** (Amlodipine injection, clinically-plausible variant). The Documentation Agent autonomously drafted both reports; F17 promoted the attacks into the regression harness. A structured cross-team handoff to the W2 Co-Pilot team triggered patches within ~2 hours (W2's MR #78 added the "data not instructions" prompt clause and an injection-pattern stripper; MR #79 added `version_sha` to `/health` for deterministic fingerprinting). The platform's F7 fingerprint detection caught W2's redeploy automatically; the regression replay fired without operator intervention; F26's empty-response guard confirmed the patched defense held at $0 LLM cost. Full receipt trail in [`evals/methodology/key-narratives.md`](./evals/methodology/key-narratives.md) (narratives 1–3) and [`evals/methodology/2026-05-14-judge-confabulation-catch.md`](./evals/methodology/2026-05-14-judge-confabulation-catch.md) (the Judge confabulation catch → patch → verify loop closed in twelve hours).
+
 ### Reproducibility stance
 
 **Statistical, not bit-exact.** The Red Team Agent, Judge, and target all run with non-zero temperature. The same seed produces variant attacks across runs; the same `(attack, response)` pair can produce different Judge confidence scores (verdict *labels* are typically stable; *confidence* is not). The platform doesn't pretend otherwise. What it guarantees instead:
@@ -151,7 +153,7 @@ The W3 brief lists 9 required deliverables. Each maps to a file in this repo:
 | 3 | **User Doc** | [`USERS.md`](./USERS.md) | 4 personas (Security Engineer, Clinical AI Platform Owner, Hospital CISO, Compliance Officer) + workflows + automation justification per persona |
 | 4 | **Architecture Doc** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Multi-agent platform architecture; each agent role + inputs/outputs/trust + inter-agent comms + orchestration + regression harness + observability + tradeoffs; ~500-word exec summary; ASCII diagrams |
 | 5 | **Demo Video (3-5 min)** | *Final-submission video; link in "Try it" above* | Platform running live attacks against deployed target; key decisions; vulnerability reports |
-| 6 | **Eval Dataset** | [`evals/seed/`](./evals/seed/) + [`evals/criteria/`](./evals/criteria/) + [`evals/results/`](./evals/results/) | Adversarial seed cases across 3 categories (SID 5 / PI 6 / UC 6 = 17 seeds); Judge criteria YAMLs per category; run-id'd reproducible results |
+| 6 | **Eval Dataset** | [`evals/seed/`](./evals/seed/) + [`evals/criteria/`](./evals/criteria/) + [`evals/results/`](./evals/results/) + [`evals/ground-truth/`](./evals/ground-truth/) | Adversarial seed cases across 3 categories (SID 6 / PI 8 / UC 6 = 20 seeds, including F8a + F8b audit-derived seeds); Judge criteria YAMLs per category; run-id'd reproducible results; F18 ground-truth Judge calibration set (20 tuples) |
 | 7 | **Vulnerability Reports** | [`evals/vulnerabilities/`](./evals/vulnerabilities/) | ≥3 distinct vuln reports following the ARCH §12.4 format (severity, repro, observed vs expected, remediation, OWASP + MITRE ATLAS classification). VULN-001 ships at MVP; VULN-002 / VULN-003 by Final. |
 | 8 | **AI Cost Analysis** | [`docs/cost-analysis.md`](./docs/cost-analysis.md) | Actual dev burn ($2.30 across 415 attacks / 14 productive runs on 2026-05-13) + projections at 100 / 1K / 10K / 100K test runs with naive vs realistic columns; per-tier cost attribution from `cost-ledger.json`; architectural changes named per scale tier (PRD's "not simply cost-per-token × n" requirement). |
 | 9 | **Social Post** *(final only)* | *Posted on X; link added on final commit* | |
@@ -166,7 +168,7 @@ For graders verifying the W3 brief deliverables map cleanly to artifacts in this
 |---|---|---|
 | **Stage 1 HARD GATE — Deployed target URL** | `https://142-93-242-40.nip.io` (this repo references it; the target itself is in the [companion repo](https://github.com/TradeUpCards/agentforge)) | Target is live and accessible; deploy guide in companion repo's `.deploy/README.md` |
 | **Stage 2 HARD GATE — `THREAT_MODEL.md`** | [`THREAT_MODEL.md`](./THREAT_MODEL.md) | ~500-word exec summary at top; full attack surface map by OWASP LLM Top 10 v2025 + ASI Top 10 2026 + MITRE ATLAS; prioritization rationale; out-of-scope explicit |
-| **Stage 3 HARD GATE — `evals/` with results from ≥3 attack categories + ≥1 working agent role running live against deployed target** | ✓ [`evals/seed/`](./evals/seed/) (17 seeds across 3 categories: SID 5 / PI 6 / UC 6), [`evals/criteria/`](./evals/criteria/) (3 Judge criteria YAMLs), [`evals/results/`](./evals/results/) (run-id'd artifacts from B6 v1 + v2 live runs) | All 4 agents running live end-to-end: Red Team mutates seeds via OpenRouter → HMAC-signed POST to deployed target → Judge renders structured verdict → Documentation auto-drafts on FAIL/PARTIAL → Orchestrator routes + halts. 30+ attacks executed against the live target; cost ledger + coverage state durably persisted. |
+| **Stage 3 HARD GATE — `evals/` with results from ≥3 attack categories + ≥1 working agent role running live against deployed target** | ✓ [`evals/seed/`](./evals/seed/) (20 seeds across 3 categories: SID 6 / PI 8 / UC 6, including F8a + F8b audit-derived seeds), [`evals/criteria/`](./evals/criteria/) (3 Judge criteria YAMLs), [`evals/results/`](./evals/results/) (run-id'd artifacts spanning MVP-day + Phase-2 live runs), [`evals/ground-truth/judge-calibration.yaml`](./evals/ground-truth/judge-calibration.yaml) (F18+F24 ground-truth set, 20 tuples) | All 4 agents running live end-to-end: Red Team mutates seeds via OpenRouter → HMAC-signed POST to deployed target → Judge renders structured verdict → Documentation auto-drafts on FAIL/PARTIAL → Orchestrator routes + halts + auto-replays regression on `/health` fingerprint change (F7+F21). 400+ attacks executed against the live target across Phase 1b + Phase 2; cost ledger + coverage state durably persisted. |
 | **Stage 4 HARD GATE — `ARCHITECTURE.md`** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | ~500-word exec summary at top; ASCII system diagram (§1) + runtime attack-lifecycle diagram (§1.1); each agent's role / inputs / outputs / trust level (§2); inter-agent coordination (§3); regression harness (§4); observability (§5); framework anchoring (§6); trust boundaries + human approval gates (§7); cost mgmt (§8); tradeoffs (§9); failure modes of platform itself / "testing the tester" (§10); evaluation metrics (§11); inter-agent JSON schemas (§12) |
 | **Stage 4 HARD GATE — Deployed target URL submitted with every checkpoint** | `https://142-93-242-40.nip.io` | Top of this README + companion repo |
 | **Submission — `USERS.md`** | [`USERS.md`](./USERS.md) | 4 personas (Security Engineer, Clinical AI Platform Owner, Hospital CISO, Compliance Officer) with workflow + automation justification per persona; explicit NOT-the-physician framing |
@@ -226,7 +228,7 @@ ClinicalRedTeam/
 │   ├── agents/test_orchestrator.py            Orchestrator daemon + value-type tests
 │   └── agents/test_orchestrator_meta.py       Orchestrator halt-state-machine meta-tests
 ├── evals/
-│   ├── seed/<category>/                       Adversarial seed cases (17 across 3 categories: SID 5 / PI 6 / UC 6; includes F8a + F8b audit-derived seeds)
+│   ├── seed/<category>/                       Adversarial seed cases (20 across 3 categories: SID 6 / PI 8 / UC 6; includes F8a + F8b audit-derived seeds)
 │   ├── criteria/<category>.yaml               Judge criteria YAMLs (3 categories)
 │   ├── regression/<category>/                 Confirmed-exploit replay cases — hand-authored *.yaml (REGR-001) + F17 auto-promoted *.json
 │   ├── ground-truth/judge-calibration.yaml    F18 — 15 hand-labeled tuples for Judge accuracy validation
@@ -267,7 +269,7 @@ ClinicalRedTeam/
 - ✓ Resume-after-restart logic
 - ✓ Agent-level meta-tests + Quality pass on 5 audit-finding tickets
 - ✓ Pre-commit + GitLab CI gate
-- ✓ Seed cases shipped across 3 categories — 5 SID, 6 PI, 6 UC seeds (17 total)
+- ✓ Seed cases shipped across 3 categories — 6 SID, 8 PI, 6 UC seeds (20 total)
 - ✓ Judge criteria YAMLs for all 3 categories
 - ✓ VULN-001 (C-7 rediscovery report) drafted
 
@@ -289,14 +291,18 @@ ClinicalRedTeam/
 - ✓ Rolling-24h aggregate daily budget gate (F19, `MAX_DAILY_COST_USD`)
 - ✓ `/attach_and_extract` endpoint coverage in target client (F20)
 - ✓ AI cost analysis at 100 / 1K / 10K / 100K runs with real data + per-tier architectural changes (F2)
-- 🔄 F21 — F7 regression loader extended to glob F17 auto-promoted `.json` cases (Aria, in flight)
-- 🔄 F1 — VULN-002 + VULN-003 (Bram, Thu AM)
-- ⏳ F23 — forensic-persistence fix for Doc Agent single-shot mode (Aria, Thu early AM)
-- ⏳ F10 — README + SETUP final pass (Tate, links demo video + dashboard + Phase 2 features)
-- ⏳ F12 — Demo script update with Phase 2 content (Tate, after F1 + F21 land)
-- ⏳ F3 — Demo video recording (3-5 min)
-- ⏳ F11 — Social post on X (tag @GauntletAI)
+- ✓ F21 — F7 regression loader extended to glob F17 auto-promoted `.json` cases (Aria)
+- ✓ F1 — VULN-002 + VULN-003 confirmed real findings against `/attach_and_extract`; auto-drafted + polished (Bram, Thu PM)
+- ✓ F23 — forensic-persistence layer: every attack writes `responses/<atk_id>.json` with the exact response Judge consumed; Doc Agent in single-shot mode; `evals/regression/` bind-mounted; target_version_sha from `/health` fingerprint (Aria, Thu AM)
+- ✓ F24 — Judge calibration set extended with 5 empty-response tuples; methodology note + BEFORE/AFTER calibration JSON snapshots; F18 baseline 80% → F24 caught drift 75% (Bram)
+- ✓ F25 — `/attach_and_extract` HTTP shape fixed: auth fields moved from multipart form to `X-OpenEMR-*` headers + persist `raw_body` for 4xx error diagnosis (Aria, Thu AM)
+- ✓ F26 — Judge confabulation patched at source: Layer 1 empty-response short-circuit guard at `judge.py:240` + Layer 2 EVIDENCE CITATION RULE in `_JUDGE_SYSTEM_PROMPT`; F24 75% → F26 80% calibration accuracy restored (Aria, Thu PM)
+- ✓ F27 — VULN-002/003 polish to grader-ready quality; VULN-WITHDRAWN-001 narrative with full diagnostic trail; methodology Phase-2 fix addendum with measured BEFORE/AFTER calibration numbers (Bram, Thu PM)
+- ✓ Cross-team fix loop closed: VULN-002/003 handoff filed → W2 Co-Pilot team shipped MR #78 (extraction prompt clause + injection-pattern stripper) + MR #79 (`version_sha` in `/health` for deterministic fingerprint) within ~2 hours → our F7 fingerprint detection caught their redeploy → regression replay auto-fired against patched target → F26 short-circuit guard returned UNCERTAIN at $0 LLM cost
+- ⏳ F3 — Demo video recording (3-5 min, Thu PM 5 PM CDT)
+- ⏳ F11 — Social post on X (tag @GauntletAI, post-recording)
 - ⏳ F4 — Submit Final via Gauntlet portal (Friday noon)
+- ⏳ F28 — Multi-source target fingerprint fallback (post-recording cleanup; generalizes F7 against future targets that don't expose `version_sha`)
 
 ---
 

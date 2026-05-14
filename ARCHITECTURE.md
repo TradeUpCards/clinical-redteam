@@ -1,7 +1,7 @@
 # Clinical Red Team Platform — Architecture
 
 **Project:** Multi-agent adversarial AI security platform for continuously identifying, evaluating, and defending against attacks on the AgentForge Clinical Co-Pilot.
-**Status:** Architecture defense draft (2026-05-11). Updated as Phase 2 build progresses.
+**Status:** Final-submission, 2026-05-14. Reflects all Phase 2 features shipped through F27 (forensic persistence, Judge confabulation patch, audit-derived seeds producing real VULN-002 + VULN-003, cross-team fix loop closed with W2 Co-Pilot team in same-day cycle).
 **Target system:** AgentForge Clinical Co-Pilot at `https://142-93-242-40.nip.io` (deployed; see [companion repo](https://github.com/TradeUpCards/agentforge)).
 
 ---
@@ -478,10 +478,11 @@ Tests of the platform's own correctness. Lives in `tests/` (separate from `evals
 
 | Test class | Trigger | What it tests | Where |
 |---|---|---|---|
-| Unit tests (Python) | Pre-commit + CI | Agent logic, state transitions, criteria evaluation | `tests/unit/` |
-| Judge calibration tests | On demand (operator-invoked) + on calibration-set update | Mocked-LLM machinery validation in CI (`tests/agents/test_judge_calibration.py`, 14 cases); live-LLM accuracy run via `scripts/run_judge_calibration.py` against 15 ground-truth tuples (≥0.80 overall, ≥0.60 per-category, 5pp baseline drift) | `tests/agents/test_judge_calibration.py` + `scripts/run_judge_calibration.py` |
-| Smoke tests | Pre-commit | One full vertical slice with mocked target + canned LLM responses | `tests/smoke/` |
-| Schema tests | Pre-commit | All inter-agent JSON schemas validate per §12 | `tests/schemas/` |
+| Unit tests (Python) | Pre-commit + CI | Agent logic, state transitions, criteria evaluation, persistence atomic writes, cost-ledger accounting, HMAC scheme conformance | Flat `tests/` layout — `test_<module>.py` files (~30 modules); agent-specific tests under `tests/agents/` |
+| Judge calibration tests | On demand (operator-invoked) + on calibration-set update | Mocked-LLM machinery validation in CI (`tests/agents/test_judge_calibration.py`, 14 cases); live-LLM accuracy run via `scripts/run_judge_calibration.py` against 20 ground-truth tuples (≥0.80 overall, ≥0.60 per-category, 5pp baseline drift). Post-F26 measured at 80.0% accuracy; BEFORE/AFTER snapshots at `evals/methodology/2026-05-14-calibration-{before-f18,after-f24,after-f26}.json`. | `tests/agents/test_judge_calibration.py` + `scripts/run_judge_calibration.py` |
+| Smoke / integration tests | Pre-commit + CI | Full vertical slice with fake-agent injection (no LLM / no HTTP); single-shot CLI dispatch + halt-reason exit-code mapping; continuous-mode resume-after-restart manifest handling | Mixed into `tests/test_run.py`, `tests/agents/test_orchestrator.py`, `tests/agents/test_orchestrator_meta.py` — fake-agent pattern via `@dataclass` stubs |
+| Schema tests | Pre-commit | All inter-agent JSON schemas (§12) round-trip via Pydantic; AttackCandidate / JudgeVerdict / VulnerabilityReportFrontmatter / Evidence / Payload / Message contracts | `tests/test_schemas.py` |
+| Forensic-persistence tests (F23) | Pre-commit | `RunHandle.save_response()` byte-exact roundtrip of `assistant_text` through Unicode + control chars + embedded quotes; `raw_body` capture for 4xx responses (F25); duplicate-attack-id raise; default `raw_body=None` legacy compat | `tests/test_persistence.py` |
 
 #### Context C — Sources of truth for grader-facing artifacts
 
@@ -1223,4 +1224,4 @@ This is the data substrate the Orchestrator reads to make routing decisions (§5
 
 ---
 
-*Architecture defense draft — 2026-05-11. Will iterate as Phase 2 build informs structural decisions; revision history tracked in git log.*
+*Architecture document — 2026-05-14 final-submission state. Reflects Phase 2 features F5 / F6 (seed-only) / F7 / F8a / F8b / F16 / F17 / F18 / F19 / F20 / F21 / F23 / F24 / F25 / F26 / F27 shipped + cross-team fix loop closed with W2 Co-Pilot team on the C-A indirect-PI vector. Revision history tracked in git log.*

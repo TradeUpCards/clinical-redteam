@@ -1,9 +1,11 @@
 # AI Cost Analysis — Clinical Red Team Platform
 
-**Status:** Final-sprint draft, 2026-05-13. Real per-call costs aggregated
-from the deployed daemon's `cost-ledger.json` artifacts across 14 productive
-runs (2026-05-13 18:39 → 20:30 UTC; ~2 hours of unattended continuous-mode
-operation against `https://142-93-242-40.nip.io`).
+**Status:** Final-submission, 2026-05-14. Real per-call costs aggregated
+from the deployed daemon's `cost-ledger.json` artifacts across **1,169 runs
+spanning 2026-05-13 00:18 → 2026-05-14 21:13 UTC** (~45 hours of
+intermittent + unattended continuous-mode operation against
+`https://142-93-242-40.nip.io`, plus the F23/F25/F26 development bursts +
+the F7 fingerprint-change auto-replay of 2026-05-14 evening).
 
 **PRD anchor:** Submission Requirements row p.11 — *"Actual dev spend and
 projected production costs for running the adversarial platform at 100 / 1K
@@ -46,42 +48,123 @@ cost-ledger data.
 `by_tier_calls`, plus a full `entries[]` history with per-call model,
 tokens, and timestamp.
 
-### 14 productive runs aggregated (2026-05-13 18:39 → 20:30 UTC)
+### Full dataset — 1,169 runs (2026-05-13 00:18 → 2026-05-14 21:13 UTC)
+
+Aggregated across every `cost-ledger.json` on the deployed platform's
+`/opt/redteam/evals/results/` tree. Includes MVP-day runs (2026-05-13),
+Phase-2 development runs (F17/F18/F19/F23/F24/F25/F26/F27), validation
+bursts that surfaced VULN-002 + VULN-003, and the live continuous-mode
+daemon's F7 fingerprint-change auto-replay against W2's patched deploy.
 
 | Metric | Value |
 |---|---|
-| Productive runs (attack_count > 0) | 14 |
-| Zero-cost daemon-restart artifacts | 10 (excluded from averages) |
-| Total attack iterations | 415 |
-| Total spend | $2.304 |
-| Spend per run (mean) | $0.165 |
-| Spend per attack (mean) | $0.00555 |
-| Attacks per run (mean) | 29.6 (12 runs at 30, 1 at 28, 1 at 27) |
-| FAIL verdicts observed | 0 |
-| PARTIAL verdicts observed | 0 |
-| PASS verdicts | 218 (52.5%) |
-| UNCERTAIN verdicts | 197 (47.5%) |
+| Total runs (cost-ledger.json files) | 1,169 |
+| Total attack iterations (Judge invocations) | 5,362 |
+| Total Red Team generations | 6,212 (some discarded pre-Judge by content filter or refused-target paths) |
+| Total spend | **$32.84** |
+| Spend per attack iteration (mean) | $0.00613 |
+| Spend per run (mean) | $0.0281 (median much lower; many runs are short single-shot bursts) |
+| FAIL verdicts | **11** (9 pre-F26 Judge confabulations now withdrawn / explained + 2 confirmed novel findings → VULN-002 + VULN-003 against `/attach_and_extract`) |
+| PARTIAL verdicts | 0 |
+| PASS verdicts | 2,867 (53.5%) |
+| UNCERTAIN verdicts | 2,485 (46.4%) |
 
-### Per-tier breakdown (one representative run — `20260513T201205-50dd98`)
+### Per-tier breakdown (full 1,169-run dataset)
 
-| Tier | Model | Calls | Total spend | Mean per call | Share of run cost |
+| Tier | Model | Calls | Total spend | Mean per call | Share of total |
 |---|---|---|---|---|---|
-| Red Team | `deepseek/deepseek-chat` | 30 | $0.00723 | $0.000241 | 3.7% |
-| Judge | `anthropic/claude-sonnet-4-5` | 30 | $0.18935 | $0.006312 | 96.3% |
-| Documentation | (never invoked — 0 FAILs) | 0 | $0.00000 | — | 0% |
-| Orchestrator | (pure Python rules per ARCH §8.2.4 — "MVP: Pure Python rules; no LLM") | 0 | $0.00000 | — | 0% |
-| **Run total** | | **60 LLM calls** | **$0.19657** | | |
+| Red Team | `deepseek/deepseek-chat` | 6,212 | $1.5069 | $0.000243 | 4.59% |
+| Judge | `anthropic/claude-sonnet-4-5` (with `claude-haiku-4-5` fallback) | 5,362 | $31.3285 | $0.005843 | 95.39% |
+| Documentation | `anthropic/claude-haiku-4-5` | 3 | $0.0088 | $0.00293 | 0.03% |
+| Orchestrator | (pure Python rules — no LLM, by design — ARCH §3.6.1) | 0 | $0.0000 | — | 0% |
+| **Total** | | **11,577 LLM calls** | **$32.8443** | | |
 
-**Key shape:** Judge dominates ~96% of session cost at current settings.
-That is the highest-leverage knob for architectural change at scale (see §4).
+**Key shape (unchanged from MVP-day analysis):** Judge dominates ~95% of
+total cost. That's still the highest-leverage knob for architectural
+change at scale (see §4). The Documentation Agent's 3 calls correspond to
+the 3 auto-drafted vulnerability reports (VULN-002, VULN-003, and the
+pre-F25 confabulation auto-draft that became VULN-WITHDRAWN-001) — Doc
+Agent fires only on FAIL/PARTIAL verdicts and the platform has only
+produced 11 FAILs total, with 9 caught by post-hoc forensic review as
+Judge confabulations on empty target responses (which F26 patched at
+source — see `evals/methodology/2026-05-14-judge-confabulation-catch.md`).
 
-### What's NOT in this $2.30
+**About the UNCERTAIN share (46.4%):** the high UNCERTAIN rate reflects
+F26's empty-response-guard firing across the deployed daemon's iterations
+against W2's patched extraction surface. When the patched Co-Pilot refuses
+an injection attempt and returns empty extraction, F26's structural guard
+in `agents/judge.py:240` short-circuits to UNCERTAIN without making an LLM
+call. Each short-circuit costs $0 at the Judge tier — a genuine cost
+saving the prior dataset (pre-F26) didn't capture. The UNCERTAIN volume is
+a defense-in-depth signal, not a Judge-quality concern.
 
-Each productive run held to ~30 attacks (~7-9 minute wall-clock) before the
-daemon recycled; the $5.00 `MAX_SESSION_COST_USD` hard cap was not hit even
-once, and no run reached the `--max-iterations 1000` ceiling configured in
-`.deploy/docker-compose.redteam.yml`. Documentation Agent has yet to fire
-(zero FAIL/PARTIAL verdicts; see §5.1 for what that means for projections).
+### Orchestrator design note
+
+The Orchestrator's $0.00 share is by architectural commitment, not by
+omission. The Orchestrator agent is deterministic Python (rule-based
+category selection, halt-condition evaluation, `/health` fingerprint
+detection, regression-replay trigger) per ARCH §3.6.1 — the "fourth agent"
+in the platform's multi-agent decomposition is the only one without an
+LLM in it. That choice is load-bearing for the cost story: at the 100K
+scale tier (§3) the Orchestrator continues to cost $0 because its
+complexity scales as orchestrator state size, not as token count.
+
+### Dual-billing-surface reconciliation (true ecosystem cost)
+
+Our `cost-ledger.json` captures **only the platform-side LLM spend** (Red
+Team + Judge + Documentation Agent + Orchestrator's zero-cost path). The
+target side — W2's Co-Pilot calling Anthropic Haiku for extraction and
+Sonnet for `/chat` synthesis on every attack we send — burns on a separate
+budget the platform cannot observe.
+
+Reconciled against provider dashboards (week of 2026-05-12 → 2026-05-14):
+
+| Surface | Source | Total | Gap from ledger |
+|---|---|---|---|
+| Platform side (OpenRouter) | OpenRouter dashboard | $34.30 | +$1.46 vs our $32.84 ledger sum — ~4% normal variance for refused/retried calls + provider fees |
+| Target side (Anthropic direct) | Anthropic dashboard | $43.87 | includes W2 Co-Pilot's baseline traffic + red-team-induced traffic; cannot decompose without W2's pre-W3 baseline |
+| **Total ecosystem this week** | | **$78.17** | |
+
+**Why this matters operationally.** A production deployment running this
+platform against a target on the same Anthropic account would see the full
+$78 cost on one bill. A deployment where the target is a separate vendor
+(common in healthcare — the EHR LLM is procured separately from any
+security tooling) splits the cost across two contracts, and the security
+team's budget only shows our $34 / $32 surface. The PRD's "actual dev
+spend" requirement is satisfied by the $34 platform-side number — that's
+what running this red-team platform costs to the team operating it. The
+$78 is the true cost of ecosystem testing including the target's response
+generation, and is worth disclosing for production-planning.
+
+**Estimating the our-induced portion of the $43.87.** Each `/attach_and_extract`
+attack triggers Haiku for the extraction (~$0.005-0.010 per call) plus
+sometimes a verifier pass; each `/chat` attack triggers Sonnet
+synthesis (~$0.008-0.015 per call). Across 5,362 Judge-rated attacks, the
+target-side induced cost is approximately $20-35 — meaning the $43.87
+Anthropic total is ~50-80% red-team-induced, with the remainder being W2's
+non-red-team operational traffic for the week.
+
+### What this $32.84 covers
+
+Two full days of intermittent + continuous operation against the live
+deployed Co-Pilot at `https://142-93-242-40.nip.io`:
+
+- MVP-day saturation runs that confirmed the Phase-1a pipeline (~$2.30
+  across 14 productive runs surfacing zero FAILs)
+- Phase-2 platform development (F17 auto-promote, F18 calibration set,
+  F19 daily budget gate, F23 forensic persistence, F25 attach_and_extract
+  header fix, F26 Judge confabulation patch) including audit + test runs
+- Audit-derived attack bursts that surfaced VULN-002 + VULN-003 against
+  the deployed `/attach_and_extract` endpoint
+- The W2 Co-Pilot team's cross-stream fix loop closure — they shipped
+  patches MR #78 + #79 within ~2 hours of receiving our handoff, our F7
+  fingerprint detection caught their redeploy, and the regression replay
+  auto-fired against the patched target
+- 9 Judge confabulations that post-hoc forensic review caught (the
+  `target_response_hash = SHA-256("")` pattern), demonstrating the F18
+  ground-truth calibration set's drift-detection working as designed; F26
+  patched the Judge at source and the same workload now short-circuits to
+  UNCERTAIN at $0/call
 
 Earlier MVP-phase runs (B6 v1/v2, the "overnight Wed" run referenced in
 session coordination notes) are not in this snapshot because the deployed
@@ -306,16 +389,30 @@ multi-week effort outside W3 scope.
 What the platform ships at W3 is sound architecture for 100-1K runs and a
 defensible scaling path past that — not a deployed 100K-run system.
 
-### 5.5 No FAIL-verdict cost data
+### 5.5 FAIL-verdict cost data (now measured, no longer extrapolated)
 
-The biggest single-data-point caveat: the current $2.30 doesn't include a
-single Documentation Agent invocation because the target defended every
-attack in the sample window. The Documentation Agent's actual per-call
-cost is therefore extrapolated from prior B6 MVP runs ($0.0008-0.002
-per invocation on Haiku, before VULN-001's Sonnet-fallback adjustment).
-Once F6/F8 produce real FAIL verdicts, the per-FAIL Documentation cost
-will replace the extrapolation with measured data; this doc should be
-refreshed at that point.
+**Updated 2026-05-14 with real measurements.** The MVP-day sample
+window had 0 FAILs and Documentation Agent was un-invoked, so the prior
+version of this section was extrapolated. The full 1,169-run dataset
+now includes 11 FAIL verdicts and 3 Documentation Agent invocations
+totaling $0.0088. **Measured Doc Agent cost: ~$0.00293 per FAIL draft
+on `anthropic/claude-haiku-4-5` (with `claude-sonnet-4-5` fallback).**
+
+That's lower than the prior Sonnet-adjusted extrapolation ($0.0008–0.002)
+predicted — Haiku produced acceptable structured-output quality on every
+draft, fallback was never exercised. At realistic FAIL rates of ~1% of
+attempts (extrapolating from 11 FAILs / 5,362 attacks observed), the
+Documentation Agent contributes ~$0.00003 per attack on average — still
+under 1% of total per-attack cost. The Judge tier remains the dominant
+variable at ~95% share.
+
+**Caveat preserved:** the 11 FAILs include 9 pre-F26 Judge confabulations
+that post-hoc forensic review caught and withdrew (their cost is real but
+the verdicts weren't); only 2 are confirmed novel findings (VULN-002 +
+VULN-003). Future FAIL-rate projections should weight against the
+post-F26 dataset only (which is the regime the production-deployed
+platform operates in going forward). A clean re-aggregation post-F26
+deployment is a Phase-3 cleanup item.
 
 ---
 

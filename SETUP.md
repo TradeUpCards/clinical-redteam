@@ -77,7 +77,8 @@ Optional (with sane defaults):
 | `JUDGE_MODEL` / `JUDGE_FALLBACK_MODEL` | `anthropic/claude-sonnet-4-5` / `anthropic/claude-haiku-4.5` | Testing a different Judge primary + single fallback |
 | `DOCUMENTATION_MODEL` / `DOCUMENTATION_FALLBACK_MODEL` | `anthropic/claude-haiku-4.5` / `anthropic/claude-sonnet-4-5` | Testing a different Doc Agent primary + single fallback |
 | `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` + `LANGFUSE_HOST` | unset (no-op) | You want inter-agent traces in Langfuse UI |
-| `HMAC_MAX_AGE_SECONDS` | `30` | Target's tolerance is wider |
+| `HMAC_MAX_AGE_SECONDS` | `30` | Target's `/chat` HMAC tolerance is wider |
+| `ATTACH_HMAC_MAX_AGE_SECONDS` | `300` | Target's `/attach_and_extract` HMAC tolerance is wider. Default 300s mirrors the deployed Co-Pilot's `main.py:179-183` "generous for front-desk upload flows" replay-window comment; raise if PDF generation + upload + HMAC compute exceeds 5 minutes on slow networks. |
 | `LOG_LEVEL` | `INFO` | Debugging — set to `DEBUG` |
 | `EVALS_DIR` | `./evals` | Pointing at a different eval-suite checkout |
 | `RESULTS_DIR` | `./evals/results` | Writing run artifacts elsewhere |
