@@ -49,6 +49,7 @@ from typing import Any
 import yaml
 
 from clinical_redteam.agents.documentation import (
+    REGRESSION_ENTRY_SCHEMA_VERSION,
     DocumentationAgent,
     NoDraftNeededError,
 )
@@ -62,6 +63,8 @@ from clinical_redteam.agents.red_team import (
 from clinical_redteam.agents.red_team import (
     AttackRefusedError,
     RedTeamAgent,
+    SeedNotFoundError,
+    SeedValidationError,
     load_seed,
 )
 from clinical_redteam.content_filter import evaluate_attack
@@ -1427,36 +1430,223 @@ class OrchestratorDaemon:
                 )
 
     def _load_regression_cases(self, root: Path) -> list[dict[str, Any]]:
-        """Walk `root/<category>/*.yaml`; return validated case dicts."""
+        """Walk `root/<category>/*.{yaml,json}`; return validated case dicts.
+
+        Two source formats coexist under the same directory:
+
+        - **YAML** (`REGR-NNN.yaml`) — hand-curated by Bram. The schema
+          matches `_REGRESSION_REQUIRED_KEYS` directly: top-level
+          `case_id`, `parent_vuln_id`, `category`, `target_endpoint`,
+          `attack_payload`. Pass-through unchanged.
+        - **JSON** (`<attack_id>.json`) — F17 auto-promoted by the
+          Documentation Agent. Different schema (nested `attack` block,
+          versioned, `patient_id` null). Mapped to the case-dict shape
+          at load time via `_map_f17_json_to_case_dict`.
+
+        **Precedence on stem collision:** if both `foo.yaml` AND
+        `foo.json` exist in the same category dir, YAML wins. Rationale:
+        hand-curated content is more reliable than auto-promoted (a
+        human reviewed it before committing), and a YAML follow-up to
+        an auto-promoted entry is a credible workflow we want to honor.
+
+        Errors (missing keys, version mismatch, unreadable file, missing
+        seed for JSON entries) → log + skip the entry. Never crash the
+        replay loop on one bad file (audit-each-step risk: silent-skip
+        overreach — each skip MUST emit a WARNING so operators see why
+        an expected entry is missing from the replay).
+        """
         cases: list[dict[str, Any]] = []
         for subdir in REGRESSION_SUBDIR_BY_CATEGORY.values():
             cat_dir = root / subdir
             if not cat_dir.exists():
                 continue
+            # First pass: collect YAML stems so JSON entries with a
+            # matching stem can be skipped (YAML wins).
+            yaml_stems: set[str] = set()
+            for yaml_path in cat_dir.glob("*.yaml"):
+                yaml_stems.add(yaml_path.stem)
+
+            # YAML entries (existing path — unchanged behavior)
             for case_path in sorted(cat_dir.glob("*.yaml")):
-                try:
-                    with case_path.open("r", encoding="utf-8") as f:
-                        data = yaml.safe_load(f)
-                except (OSError, yaml.YAMLError) as exc:
-                    logger.warning(
-                        "F7: skipping unreadable regression file %s (%s)",
-                        case_path, exc,
+                yaml_case = self._load_regression_yaml(case_path)
+                if yaml_case is not None:
+                    cases.append(yaml_case)
+
+            # F21: JSON entries (F17 auto-promoted)
+            for case_path in sorted(cat_dir.glob("*.json")):
+                if case_path.stem in yaml_stems:
+                    logger.info(
+                        "F21: skipping auto-promoted %s — hand-curated "
+                        "YAML with the same stem takes precedence",
+                        case_path,
                     )
                     continue
-                if not isinstance(data, dict):
-                    logger.warning(
-                        "F7: %s is not a mapping; skipping", case_path
-                    )
-                    continue
-                missing = _REGRESSION_REQUIRED_KEYS - set(data.keys())
-                if missing:
-                    logger.warning(
-                        "F7: regression case %s missing keys %s; skipping",
-                        case_path, sorted(missing),
-                    )
-                    continue
-                cases.append(data)
+                json_case = self._load_regression_json(case_path)
+                if json_case is not None:
+                    cases.append(json_case)
         return cases
+
+    def _load_regression_yaml(self, case_path: Path) -> dict[str, Any] | None:
+        """Load a hand-curated YAML regression case. Returns None on skip."""
+        try:
+            with case_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning(
+                "F7: skipping unreadable regression file %s (%s)",
+                case_path, exc,
+            )
+            return None
+        if not isinstance(data, dict):
+            logger.warning("F7: %s is not a mapping; skipping", case_path)
+            return None
+        missing = _REGRESSION_REQUIRED_KEYS - set(data.keys())
+        if missing:
+            logger.warning(
+                "F7: regression case %s missing keys %s; skipping",
+                case_path, sorted(missing),
+            )
+            return None
+        return data
+
+    def _load_regression_json(self, case_path: Path) -> dict[str, Any] | None:
+        """F21: Load an F17-auto-promoted JSON regression entry, map it to
+        the case-dict shape `_replay_one_case` consumes. Returns None on skip.
+        """
+        try:
+            with case_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "F21: skipping unreadable F17 regression JSON %s (%s)",
+                case_path, exc,
+            )
+            return None
+        if not isinstance(data, dict):
+            logger.warning(
+                "F21: %s is not a JSON object; skipping", case_path
+            )
+            return None
+        return self._map_f17_json_to_case_dict(data, case_path)
+
+    def _map_f17_json_to_case_dict(
+        self, data: dict[str, Any], case_path: Path
+    ) -> dict[str, Any] | None:
+        """Translate an F17 auto-promoted entry into the loader's case-dict shape.
+
+        F17 schema (see `documentation.py:_promote_attack_to_regression`):
+            {
+              "regression_entry_version": "1",
+              "promoted_from_vuln_id": "VULN-002",
+              "source_attack_id": "atk_2026-05-13_007",
+              "category": "prompt_injection",
+              "subcategory": "...",
+              "owasp_id": "...", "asi_id": "...", "atlas_technique_id": "...",
+              "attack": {
+                "payload": "<full PHI-scrubbed payload>",
+                "target_endpoint": "/attach_and_extract",
+                "patient_id": null,  # resolved at replay time
+                "seed_id": "pi-indirect-extraction-block-injection",
+                "mutation_parent": "...",
+                "mutation_depth": 1
+              }
+            }
+
+        Replay case-dict shape (what `_replay_one_case` consumes):
+            { case_id, parent_vuln_id, category, target_endpoint,
+              attack_payload, primary_patient_id?, subcategory?,
+              owasp_id?, asi_id?, atlas_technique_id? }
+
+        Returns None (with WARNING) when:
+        - version mismatch (forward-compat — schema bumps shouldn't crash)
+        - missing required nested keys
+        - seed lookup fails (replay needs `primary_patient_id` and the
+          F17 schema deliberately leaves it null per ARCH §3 — the
+          seed library is the source of truth)
+        """
+        version = data.get("regression_entry_version")
+        if version != REGRESSION_ENTRY_SCHEMA_VERSION:
+            logger.warning(
+                "F21: skipping %s — regression_entry_version=%r, expected "
+                "%r. Forward-compat hook: schema bumps emit at-load-time "
+                "warnings rather than crashing the replay loop.",
+                case_path, version, REGRESSION_ENTRY_SCHEMA_VERSION,
+            )
+            return None
+
+        attack_block = data.get("attack")
+        if not isinstance(attack_block, dict):
+            logger.warning(
+                "F21: %s missing `attack` nested object; skipping",
+                case_path,
+            )
+            return None
+
+        for required in ("payload", "target_endpoint"):
+            if not attack_block.get(required):
+                logger.warning(
+                    "F21: %s missing attack.%s; skipping",
+                    case_path, required,
+                )
+                return None
+
+        category = data.get("category")
+        if category not in REGRESSION_SUBDIR_BY_CATEGORY:
+            logger.warning(
+                "F21: %s has unknown/missing category %r; skipping",
+                case_path, category,
+            )
+            return None
+
+        # Resolve patient_id from the seed library. F17 deliberately leaves
+        # `attack.patient_id` null — the seed_id (== mutation_parent for
+        # MVP depth-1 mutations) is the immutable identity; the PID is
+        # chosen per replay from the seed YAML's `primary_patient_id`.
+        seed_id = attack_block.get("seed_id") or attack_block.get("mutation_parent")
+        if not seed_id:
+            logger.warning(
+                "F21: %s has no `attack.seed_id` (and no fallback "
+                "mutation_parent); skipping — replay needs a seed to "
+                "resolve primary_patient_id",
+                case_path,
+            )
+            return None
+
+        try:
+            seed = load_seed(
+                seed_id, category=category, evals_dir=self.config.evals_dir
+            )
+        except (SeedNotFoundError, SeedValidationError) as exc:
+            logger.warning(
+                "F21: %s references seed_id=%r which cannot be loaded "
+                "(%s); skipping replay entry",
+                case_path, seed_id, exc,
+            )
+            return None
+
+        primary_pid = seed.get("primary_patient_id")
+        if primary_pid is None:
+            logger.warning(
+                "F21: seed %s has no primary_patient_id; skipping "
+                "regression entry %s",
+                seed_id, case_path,
+            )
+            return None
+
+        return {
+            # Required keys for `_replay_one_case`
+            "case_id": data.get("source_attack_id", case_path.stem),
+            "parent_vuln_id": data.get("promoted_from_vuln_id", "UNKNOWN"),
+            "category": category,
+            "target_endpoint": attack_block["target_endpoint"],
+            "attack_payload": attack_block["payload"],
+            # Optional pass-through (replay forwards these to AttackCandidate)
+            "subcategory": data.get("subcategory", "regression_replay"),
+            "owasp_id": data.get("owasp_id", "unknown"),
+            "asi_id": data.get("asi_id"),
+            "atlas_technique_id": data.get("atlas_technique_id"),
+            "primary_patient_id": primary_pid,
+        }
 
     def _replay_one_case(self, case: dict[str, Any]) -> None:
         """Send one regression-case attack through target + judge + persist."""
