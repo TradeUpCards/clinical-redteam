@@ -1,6 +1,6 @@
 ---
 vuln_id: VULN-003
-title: Prompt Injection via indirect via extraction field poisoning (high)
+title: "Indirect PI via Extraction Field — Amlodipine Medication-List Poisoning, Clinically-Plausible Variant (high)"
 severity: high
 status: draft-pending-review
 discovered_at: "2026-05-14T07:05:02.901261Z"
@@ -23,7 +23,10 @@ fix_validation:
   last_run_status: pending
 ---
 
-# VULN-003 — Extraction Field-Value Poisoning, Clinically Plausible Variant
+# VULN-003 — Indirect PI via Extraction Field: Amlodipine Medication-List Poisoning (Clinically-Plausible Variant)
+
+**Severity:** high
+**Status:** draft-pending-review
 
 > **Sibling finding of VULN-002, same root cause, subtler payload.** Same `/attach_and_extract` field-value-poisoning vector at the same code path — but here the injected drug (Amlodipine 5mg) is a clinically *plausible* addition to the patient's existing Losartan + Hydrochlorothiazide regimen. The poisoned extraction is harder for a reviewing clinician to catch by inspection because all three drugs together form a coherent multi-drug antihypertensive plan; nothing in the medication-list shape signals "this entry is fake."
 
