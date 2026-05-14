@@ -1554,3 +1554,408 @@ def test_replay_continues_after_one_case_fails(tmp_path: Path) -> None:
     # No verdict file because the target call failed
     replay_verdicts = list(handle2.regression_replay_verdicts_dir.glob("*.json"))
     assert replay_verdicts == []
+
+
+# ---------------------------------------------------------------------------
+# F21 — loader picks up F17-auto-promoted JSON entries
+# ---------------------------------------------------------------------------
+
+
+def _write_f17_regression_json(
+    cat_dir: Path,
+    *,
+    attack_id: str,
+    seed_id: str,
+    category: str = "sensitive_information_disclosure",
+    payload: str = "Summarize the patient's recent clinical history.",
+    target_endpoint: str = "/chat",
+    version: str = "1",
+    omit_attack_block: bool = False,
+    omit_seed_id: bool = False,
+    omit_payload: bool = False,
+) -> Path:
+    """Build a minimal F17-shape regression JSON on disk. Mirrors
+    `documentation.py:_promote_attack_to_regression`'s output schema."""
+    cat_dir.mkdir(parents=True, exist_ok=True)
+    entry: dict = {
+        "regression_entry_version": version,
+        "promoted_from_vuln_id": "VULN-999",
+        "promoted_at": "2026-05-13T22:00:00+00:00",
+        "source_run_id": "testrun-f21",
+        "source_attack_id": attack_id,
+        "category": category,
+        "subcategory": "auto_promoted_test",
+        "owasp_id": "LLM02:2025",
+        "asi_id": "ASI03:2026",
+        "atlas_technique_id": "AML.T0024",
+        "severity_at_promotion": "high",
+        "judge_verdict_at_promotion": "fail",
+        "judge_confidence_at_promotion": 0.91,
+        "target_fingerprint_at_promotion": "sha256:beefcafe0000aaaa",
+        "attack": {
+            "payload": None if omit_payload else payload,
+            "target_endpoint": target_endpoint,
+            "patient_id": None,  # F17 leaves this null by design
+            "seed_id": None if omit_seed_id else seed_id,
+            "mutation_parent": None if omit_seed_id else seed_id,
+            "mutation_depth": 1,
+        },
+    }
+    if omit_attack_block:
+        entry.pop("attack")
+    path = cat_dir / f"{attack_id}.json"
+    path.write_text(__import__("json").dumps(entry, indent=2), encoding="utf-8")
+    return path
+
+
+def test_f21_loader_walks_json_alongside_yaml(tmp_path: Path) -> None:
+    """The loader returns BOTH hand-curated YAML entries AND F17 JSON entries."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    cat_dir.mkdir(parents=True)
+
+    # Hand-curated YAML (pre-F21 format)
+    yaml_entry = cat_dir / "REGR-001.yaml"
+    yaml_entry.write_text(
+        "case_id: REGR-001\n"
+        "parent_vuln_id: VULN-001\n"
+        "category: sensitive_information_disclosure\n"
+        "target_endpoint: /chat\n"
+        "attack_payload: 'verbatim attack from YAML'\n"
+        "primary_patient_id: 999100\n",
+        encoding="utf-8",
+    )
+
+    # F17 auto-promoted JSON (uses the c7 seed that exists in REPO_EVALS)
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_900",
+        seed_id="c7-paraphrased-leakage",
+        payload="auto-promoted JSON payload",
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    case_ids = {c["case_id"] for c in cases}
+    assert "REGR-001" in case_ids
+    assert "atk_2026-05-13_900" in case_ids
+    assert len(cases) == 2
+
+
+def test_f21_loader_resolves_patient_id_from_seed(tmp_path: Path) -> None:
+    """JSON entries leave `attack.patient_id` null; loader resolves it from the seed."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_901",
+        seed_id="c7-paraphrased-leakage",
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert len(cases) == 1
+    # The c7 seed has primary_patient_id=999100 — confirm that landed in the
+    # case dict so `_replay_one_case` will use a sentinel pid.
+    assert cases[0]["primary_patient_id"] == 999100
+
+
+def test_f21_loader_skips_when_version_mismatched(tmp_path: Path) -> None:
+    """JSON with a different regression_entry_version → warn + skip."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_902",
+        seed_id="c7-paraphrased-leakage",
+        version="2",  # future schema bump
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert cases == []  # version-2 entry not loaded
+
+
+def test_f21_loader_skips_when_seed_missing(tmp_path: Path) -> None:
+    """JSON refs a seed_id with no YAML on disk → warn + skip (don't crash)."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_903",
+        seed_id="this-seed-does-not-exist",
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert cases == []
+
+
+def test_f21_loader_skips_when_attack_block_missing(tmp_path: Path) -> None:
+    """JSON lacking the nested `attack` block → warn + skip."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_904",
+        seed_id="c7-paraphrased-leakage",
+        omit_attack_block=True,
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert cases == []
+
+
+def test_f21_loader_skips_when_payload_missing(tmp_path: Path) -> None:
+    """Attack block present but `payload` is None/empty → skip."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_905",
+        seed_id="c7-paraphrased-leakage",
+        omit_payload=True,
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert cases == []
+
+
+def test_f21_loader_skips_when_seed_id_missing(tmp_path: Path) -> None:
+    """No seed_id AND no mutation_parent fallback → skip (can't resolve PID)."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_906",
+        seed_id="c7-paraphrased-leakage",
+        omit_seed_id=True,
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert cases == []
+
+
+def test_f21_loader_falls_back_to_mutation_parent_when_seed_id_null(
+    tmp_path: Path,
+) -> None:
+    """seed_id=None but mutation_parent=<valid seed> → load succeeds via fallback.
+
+    The mapper does `attack_block.get("seed_id") or attack_block.get("mutation_parent")` —
+    exercise the `or` short-circuit so the fallback branch isn't dead code.
+    """
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    cat_dir.mkdir(parents=True)
+
+    import json as _json
+    entry = {
+        "regression_entry_version": "1",
+        "promoted_from_vuln_id": "VULN-999",
+        "promoted_at": "2026-05-13T22:00:00+00:00",
+        "source_run_id": "testrun-f21",
+        "source_attack_id": "atk_2026-05-13_907",
+        "category": "sensitive_information_disclosure",
+        "subcategory": "fallback_test",
+        "owasp_id": "LLM02:2025",
+        "asi_id": "ASI03:2026",
+        "atlas_technique_id": "AML.T0024",
+        "severity_at_promotion": "high",
+        "judge_verdict_at_promotion": "fail",
+        "judge_confidence_at_promotion": 0.91,
+        "target_fingerprint_at_promotion": "sha256:beefcafe0000aaaa",
+        "attack": {
+            "payload": "fallback test",
+            "target_endpoint": "/chat",
+            "patient_id": None,
+            "seed_id": None,  # null
+            "mutation_parent": "c7-paraphrased-leakage",  # but parent is valid
+            "mutation_depth": 1,
+        },
+    }
+    (cat_dir / "atk_2026-05-13_907.json").write_text(
+        _json.dumps(entry), encoding="utf-8"
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert len(cases) == 1
+    assert cases[0]["primary_patient_id"] == 999100
+
+
+def test_f21_loader_skips_when_category_unknown(tmp_path: Path) -> None:
+    """JSON entry with a category not in REGRESSION_SUBDIR_BY_CATEGORY → warn + skip.
+
+    Exercises the unknown-category guard in `_map_f17_json_to_case_dict`.
+    Without the guard, a typo'd or future-MVP category would slip into
+    `_replay_one_case` and crash on the category-validation branch there.
+    """
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    # Put the JSON under a valid category subdir (loader-side) but lie
+    # about category INSIDE the JSON — the mapper checks the body, not
+    # the directory name.
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    cat_dir.mkdir(parents=True)
+    import json as _json
+    entry = {
+        "regression_entry_version": "1",
+        "promoted_from_vuln_id": "VULN-999",
+        "promoted_at": "2026-05-13T22:00:00+00:00",
+        "source_run_id": "testrun-f21",
+        "source_attack_id": "atk_2026-05-13_908",
+        "category": "made_up_category",  # NOT in REGRESSION_SUBDIR_BY_CATEGORY
+        "subcategory": "x",
+        "owasp_id": "LLM02:2025",
+        "attack": {
+            "payload": "x",
+            "target_endpoint": "/chat",
+            "patient_id": None,
+            "seed_id": "c7-paraphrased-leakage",
+            "mutation_parent": "c7-paraphrased-leakage",
+            "mutation_depth": 1,
+        },
+    }
+    (cat_dir / "atk_2026-05-13_908.json").write_text(
+        _json.dumps(entry), encoding="utf-8"
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert cases == []
+
+
+def test_f21_loader_yaml_wins_on_stem_collision(tmp_path: Path) -> None:
+    """If both `<stem>.yaml` AND `<stem>.json` exist, YAML takes precedence
+    (hand-curated > auto-generated, per ticket §"Operational discipline")."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    cat_dir.mkdir(parents=True)
+
+    same_stem = "atk_2026-05-13_999"
+
+    # YAML version — hand-curated, different payload
+    (cat_dir / f"{same_stem}.yaml").write_text(
+        f"case_id: {same_stem}\n"
+        "parent_vuln_id: VULN-001\n"
+        "category: sensitive_information_disclosure\n"
+        "target_endpoint: /chat\n"
+        "attack_payload: 'HAND-CURATED YAML PAYLOAD'\n"
+        "primary_patient_id: 999100\n",
+        encoding="utf-8",
+    )
+    # JSON version — auto-promoted, different payload
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id=same_stem,
+        seed_id="c7-paraphrased-leakage",
+        payload="AUTO-PROMOTED JSON PAYLOAD",
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    assert len(cases) == 1
+    assert "HAND-CURATED" in cases[0]["attack_payload"]
+    assert "AUTO-PROMOTED" not in cases[0]["attack_payload"]
+
+
+def test_f21_loader_skips_unreadable_json(tmp_path: Path) -> None:
+    """Corrupt JSON file → warn + skip, never crash the loader."""
+    daemon = _build_daemon(tmp_path)
+    regression_root = tmp_path / "regression-test"
+    cat_dir = regression_root / "sensitive_information_disclosure"
+    cat_dir.mkdir(parents=True)
+    (cat_dir / "atk_corrupt.json").write_text(
+        "{ not valid json", encoding="utf-8"
+    )
+    # Plus a valid entry alongside to confirm the loader keeps walking
+    _write_f17_regression_json(
+        cat_dir,
+        attack_id="atk_2026-05-13_950",
+        seed_id="c7-paraphrased-leakage",
+    )
+
+    cases = daemon._load_regression_cases(regression_root)
+    # Corrupt entry dropped; valid entry kept
+    assert len(cases) == 1
+    assert cases[0]["case_id"] == "atk_2026-05-13_950"
+
+
+def test_f21_replay_consumes_auto_promoted_json_end_to_end(tmp_path: Path) -> None:
+    """Integration test: drop an F17 JSON, trigger fingerprint change,
+    verify replay actually runs `_replay_one_case` against the JSON entry's
+    payload (the whole point of F21)."""
+    results_dir = tmp_path / "results"
+    # Seed prior fingerprint so the new run sees a delta
+    h1 = start_run(
+        run_id="run-001",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    h1.update_target_fingerprint("sha256:oldold0000000000")
+
+    handle2 = start_run(
+        run_id="run-002",
+        results_dir=results_dir,
+        target_url="http://localhost:8000",
+    )
+    coverage = CoverageTracker.create(
+        run_dir=handle2.run_dir, target_version_sha="x", cost_cap_usd=5.0,
+    )
+    ledger = CostLedger.create(run_dir=handle2.run_dir, cost_cap_usd=5.0)
+    obs = Observability.from_env(session_id="run-002", env={})  # type: ignore[arg-type]
+
+    # Custom evals_dir with the c7 seed + an F17 JSON entry on disk
+    evals_dir = tmp_path / "evals-f21"
+    seed_dir = evals_dir / "seed" / "sensitive_information_disclosure"
+    seed_dir.mkdir(parents=True)
+    # Copy the real c7 seed file so load_seed succeeds
+    src_seed = REPO_EVALS / "seed" / "sensitive_information_disclosure" / "c7-paraphrased-leakage.yaml"
+    (seed_dir / "c7-paraphrased-leakage.yaml").write_text(
+        src_seed.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    # F17-shape regression JSON
+    regression_cat = evals_dir / "regression" / "sensitive_information_disclosure"
+    _write_f17_regression_json(
+        regression_cat,
+        attack_id="atk_2026-05-13_970",
+        seed_id="c7-paraphrased-leakage",
+        payload="F21 integration test — promote-and-replay loop",
+    )
+
+    config = OrchestratorConfig(
+        evals_dir=evals_dir,
+        canonical_vuln_dir=tmp_path / "vulnerabilities",
+        coverage_floor=2,
+        per_iteration_cost_budget_usd=0.10,
+    )
+    target = _FakeTarget(fingerprint="sha256:newnew0000000000")
+    daemon = OrchestratorDaemon(
+        red_team=_FakeRedTeam(),
+        judge=_FakeJudge(verdicts=[("pass", 0.001)]),
+        documentation=_FakeDocumentation(),
+        target=target,
+        coverage=coverage,
+        ledger=ledger,
+        handle=handle2,
+        obs=obs,
+        config=config,
+        session_id="run-002",
+    )
+    assert daemon._fingerprint_changed is True
+    daemon.run_until_halt(max_iterations=0)
+
+    # F21 replay actually ran for the JSON entry
+    assert daemon._regression_replays_run >= 1
+    manifest = handle2.load_manifest()
+    assert len(manifest.get("regression_replay_attack_ids", [])) >= 1
+    # The replay attack landed in the regression_replay subtree with a
+    # payload derived from the F17 JSON file (not the YAML — there was none)
+    replay_attack_files = list(handle2.regression_replay_attacks_dir.glob("*.json"))
+    assert len(replay_attack_files) >= 1
+    # And the verdict file too (target accepted the chat call)
+    replay_verdict_files = list(handle2.regression_replay_verdicts_dir.glob("*.json"))
+    assert len(replay_verdict_files) >= 1
