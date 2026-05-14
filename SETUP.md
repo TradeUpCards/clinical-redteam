@@ -71,13 +71,22 @@ Optional (with sane defaults):
 
 | Variable | Default | Override when |
 |---|---|---|
-| `MAX_SESSION_COST_USD` | `10` | You want stricter cost cap per session |
-| `RED_TEAM_TIER1_MODEL` / `TIER2_MODEL` / `TIER3_MODEL` | (set in .env.example) | Testing a different routing chain |
+| `MAX_SESSION_COST_USD` | `10` | You want stricter cost cap per individual run |
+| `MAX_DAILY_COST_USD` | `50` | You want stricter rolling-24h aggregate cap across all runs (F19; daemon refuses to start a new run with exit code 8 when exceeded). Pairs with `restart: on-failure:3` in deployment so the daemon doesn't restart-loop into the cap. Measures OpenRouter-side spend only — Anthropic-direct calls (if any) are opaque to this gate. |
+| `RED_TEAM_MODEL` / `RED_TEAM_FALLBACK_MODELS` | `deepseek/deepseek-chat` / `meta-llama/llama-3.1-70b-instruct,anthropic/claude-haiku-4.5` | Testing a different Red Team primary + fallback chain |
+| `JUDGE_MODEL` / `JUDGE_FALLBACK_MODEL` | `anthropic/claude-sonnet-4-5` / `anthropic/claude-haiku-4.5` | Testing a different Judge primary + single fallback |
+| `DOCUMENTATION_MODEL` / `DOCUMENTATION_FALLBACK_MODEL` | `anthropic/claude-haiku-4.5` / `anthropic/claude-sonnet-4-5` | Testing a different Doc Agent primary + single fallback |
 | `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` + `LANGFUSE_HOST` | unset (no-op) | You want inter-agent traces in Langfuse UI |
 | `HMAC_MAX_AGE_SECONDS` | `30` | Target's tolerance is wider |
 | `LOG_LEVEL` | `INFO` | Debugging — set to `DEBUG` |
 | `EVALS_DIR` | `./evals` | Pointing at a different eval-suite checkout |
 | `RESULTS_DIR` | `./evals/results` | Writing run artifacts elsewhere |
+| `ORCHESTRATOR_SIGNAL_FLOOR` | `0.0` (disabled) | You want the daemon to halt when signal-to-cost ratio drops below this threshold. Defaults disabled because calibrating the threshold needs real FAIL-verdict data; once you have it, a value like `0.2` halts runs that are burning cost without producing new signal. |
+
+**Two-layer cost guard (F19 + per-session).** The daemon enforces two cost-cap layers in series:
+
+1. **Per-session** — `MAX_SESSION_COST_USD` halts the currently-running daemon process once accumulated spend crosses the cap. Resets on every new run.
+2. **Rolling-24h aggregate** — `MAX_DAILY_COST_USD` is checked *before* a new run starts. The daemon walks `evals/results/*/cost-ledger.json`, sums `total_usd` for runs whose `started_at` is within the last 24 hours, and refuses to start if the sum equals or exceeds the cap. This is the layer that makes unsupervised overnight operation safe — a crashing-and-restarting daemon under Docker's `restart: on-failure:3` policy can't burn through dozens of dollars before the next operator check, because the gate trips on restart.
 
 **Hard rule:** patient IDs in attack payloads MUST be in the sentinel range 999100–999999. The target client refuses anything else (`target_client.py:76-83`). This is a project-wide guardrail to keep attacks from accidentally touching real-or-could-be-real PHI even though the deployed target only has synthetic data.
 
@@ -208,9 +217,10 @@ If `LANGFUSE_*` keys are set, the same activity is in the Langfuse UI as inter-a
 | `OutOfScopeTargetError` | `RED_TEAM_TARGET_URL` hostname not on allowlist | Allowlist is in `target_client.py:55-67` — must be `localhost`, `127.0.0.1`, `142-93-242-40.nip.io`, or `agent`. Anything else is a hard refusal. |
 | `SentinelPatientIdError` | Attack payload references a non-sentinel patient ID | Patient IDs in seeds + mutations must be 999100–999999. Real PIDs (1–200) are forbidden even though the deployed target is synthetic-only. |
 | HTTP 401 from target | HMAC signature mismatch | `RED_TEAM_TARGET_HMAC_SECRET` doesn't match what the deployed target expects. Re-pull from companion-repo `.env` or the droplet. |
-| HTTP 404 from OpenRouter | A tier model was delisted | Check `RED_TEAM_TIER*_MODEL` values against current https://openrouter.ai/models. Tier fallback (429/5xx/connect/404) will auto-degrade through tiers but if ALL tiers fail there's a config issue. |
+| HTTP 404 from OpenRouter | A model was delisted | Check `RED_TEAM_MODEL` / `RED_TEAM_FALLBACK_MODELS` / `JUDGE_MODEL` / `JUDGE_FALLBACK_MODEL` / `DOCUMENTATION_MODEL` / `DOCUMENTATION_FALLBACK_MODEL` against current https://openrouter.ai/models. Per-tier fallback (429/5xx/connect/404) auto-degrades to the fallback chain; if both primary AND fallback fail across a tier there's a config issue. |
 | Connection refused on `localhost:8000` | SSH tunnel dropped | Restart the tunnel (§4 Path B). Use `-o ServerAliveInterval=30` to keep it alive. |
 | Cost cap fires too early | `MAX_SESSION_COST_USD` too low or you're running expensive models | Either raise the cap or switch tier models to cheaper alternatives. Inspect `cost-ledger.json` to see where the spend went. |
+| Daemon won't start, error mentions `MAX_DAILY_COST_USD` (exit code 8) | Rolling-24h aggregate spend across recent runs has hit the F19 daily cap | Either wait for the rolling-24h window to age out (the gate checks runs started in the last 24h; older runs roll off automatically), or raise `MAX_DAILY_COST_USD` in `/opt/redteam/.env` (or local `.env`) and restart. Inspect `evals/results/*/cost-ledger.json` to confirm the aggregate. |
 | Tests fail after `pip install -e ".[dev]"` | Wrong Python version | Check `python --version`. Must be 3.12+ for Pydantic v2 + match types. |
 
 ---
@@ -296,7 +306,7 @@ docker compose -f /opt/redteam/repo/.deploy/docker-compose.redteam.yml logs -f r
 | Tunnel to target | Required (SSH `-L 8000`) | Not needed — Docker DNS (`agent:8000`) |
 | Secret management | `.env` in repo dir | `.env` in `/opt/redteam/` (mode 600, outside repo) |
 | Artifact persistence | Local filesystem | Bind-mounted `/opt/redteam/evals/` survives container restarts |
-| Cost cap | Per-invocation `--max-budget` | Persistent `MAX_SESSION_COST_USD` in `.env` |
+| Cost cap | Per-invocation `--max-budget` | **Two layers**: per-session `MAX_SESSION_COST_USD` (default $10) in `.env` halts the running daemon; rolling-24h aggregate `MAX_DAILY_COST_USD` (default $50, F19) refuses to start a new run when crossed. Paired with `restart: on-failure:3` for safe unsupervised overnight operation. |
 | TLS | None | Caddy auto-TLS via Let's Encrypt |
 
 ### What deployment does NOT add (out of MVP scope)

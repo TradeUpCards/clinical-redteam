@@ -23,7 +23,9 @@ This separation is intentional: **a system that both generates and judges attack
 
 **MVP (Tuesday) demonstrates continuous-mode operation end-to-end** — the Orchestrator drives an unattended `while True:` loop that picks categories, dispatches Red Team mutation, evaluates via Judge, persists regression cases, drafts vulnerability reports, and halts cleanly on resource bounds (cost cap, signal-to-cost ratio collapse, or all-categories-at-floor). Engineer kicks off the daemon; daemon runs autonomously until it halts itself. The vertical slice — Red Team seed/mutation → live target call → Judge verdict → saved regression case → draft vulnerability report — is the unit of work the loop repeats. Three attack categories: **sensitive information disclosure (cross-patient PHI leakage)**, **prompt injection (including document-based indirect)**, and **unbounded consumption (cost amplification)**. Known finding `C-7` from Week 2 (cross-patient paraphrased leakage, currently HIGH-severity deferred in the Co-Pilot's `AUDIT.md`) is the platform's first rediscovery target — proving the system can autonomously reproduce a real previously-confirmed vulnerability before chasing novel exploits. See §9.4 for the full MVP scope.
 
-**Intentionally deferred beyond MVP** (full list in §9.4): Orchestrator autonomous category-picking, multi-turn attack sequences, ground-truth Judge calibration, autonomous filing of high/critical reports, exploit chaining, self-improving attack strategies, distributed fuzzing, RL-based prioritization. Right-sizing is a feature, not a bug.
+**Intentionally deferred beyond MVP** (full list in §9.4): Orchestrator autonomous category-picking, exploit chaining, self-improving attack strategies, distributed fuzzing, RL-based prioritization. Right-sizing is a feature, not a bug.
+
+**Shipped in Phase 2** (originally listed as deferred): ground-truth Judge calibration set + accuracy runner (§2.2, F18 — 15 hand-labeled tuples at `evals/ground-truth/judge-calibration.yaml` exercised by `scripts/run_judge_calibration.py`); autonomous regression-case promotion (§2.4, F17 — Documentation Agent writes `evals/regression/<category>/<attack_id>.json` for every FAIL/PARTIAL verdict, no operator step); rolling-24h aggregate daily budget gate (F19, `MAX_DAILY_COST_USD`) as a second cost-guard layer above per-session cap; target-change-triggered regression replay (F7, target `/health` fingerprinting). **Partially shipped (seed-only):** multi-turn attack sequences (F6) — the seed YAML `evals/seed/prompt_injection/pi-multi-turn-context-poison.yaml` is authored with `payload_type: multi_turn` and a `turns:` block, but the runtime path is single-turn-fallback today: the Red Team Agent's `generate()` coerces output to `Payload(type=single_turn)` and the target client's `chat()` doesn't yet thread the multi-turn list — those extensions are F6(b) and F6(c), tracked but not yet merged. **Human approval for HIGH/CRITICAL vulnerability reports remains the trust gate** — auto-promotion is for regression cases (machine-readable replay inputs), not for filed vuln reports (CISO-facing artifacts).
 
 The system operates under explicit trust boundaries (§7): no autonomous remediation, no autonomous production changes, human approval required for high and critical findings before filing, bounded token and runtime budgets enforced by the Orchestrator, and an audit log of every autonomous action. The platform anchors on established frameworks rather than inventing taxonomy: **OWASP LLM Top 10 v2025** (attack surface of the target), **OWASP ASI Top 10 2026** (security posture of this autonomous multi-agent platform itself), **MITRE ATLAS** (per-attack technique IDs), and **NIST AI RMF** (governance lens), with healthcare context grounded in **HHS AI Strategy**. A hospital CISO deciding whether to trust this platform with continuous security testing speaks the language these frameworks already provide; that is the bar this document is built to.
 
@@ -267,7 +269,7 @@ Implementation: pre-flight check on every `AttackCandidate` before it's sent to 
 
 **Model choice.** Frontier commercial model (Claude 4.6 Sonnet baseline) — judge needs nuanced evaluation; cost is bounded by attack throughput.
 
-**Calibration.** Ground-truth dataset of human-labeled (attack, response, verdict) tuples. Judge accuracy measured against this on every deploy. Drift detection: rolling-window accuracy, alert if drops >5pp from baseline.
+**Calibration (shipped — F18).** Ground-truth dataset of 15 hand-labeled `(attack, simulated_target_response, expected_verdict, expected_criteria)` tuples at `evals/ground-truth/judge-calibration.yaml` (5 per attack category: SID, PI, UC; balanced verdict mix). Operator-invoked accuracy runner at `scripts/run_judge_calibration.py` executes the real Judge against each tuple, reports overall accuracy + per-category accuracy + per-tuple verdict-match / criteria-match / confidence + misclassified-tuple listing + cost summary. Acceptance thresholds: **≥0.80 overall accuracy**, **≥0.60 per-category accuracy**, **5pp drift** versus a JSON baseline (`--baseline-file`). Exit codes 0–4 differentiate threshold pass / overall-accuracy fail / per-category fail / baseline-drift fail / setup error so CI can branch on cause. Real OpenRouter calls cost ~$0.05–0.20 per full run; the mocked-LLM machinery test at `tests/agents/test_judge_calibration.py` (14 cases) is the CI-runnable surface.
 
 **Failure modes named.**
 - Judge starts agreeing with everything (true-positive collapse). Mitigation: ground-truth calibration + meta-test cases that should always fail.
@@ -332,6 +334,18 @@ Implementation: pre-flight check on every `AttackCandidate` before it's sent to 
 **Model choice.** Frontier commercial model — report quality matters; volume is bounded by confirmed-exploit count (low).
 
 **Trust gate (conservative posture).** Documentation Agent **drafts every report** to `evals/vulnerabilities/VULN-<NNN>-DRAFT.md`. Auto-promote to `VULN-<NNN>.md` (filed) for severity ∈ {`low`, `medium`} with engineer notification. **Severity ∈ {`high`, `critical`} requires human approval** before promotion to filed status, before any external issue creation, and before any remediation ticket. The draft sits visible in-repo; the human reviewer flips a `status:` field in the YAML frontmatter from `draft-pending-review` to `filed`. This is more conservative than autonomy-tier defaults — appropriate for a healthcare context where a falsely-filed `high` finding wastes engineering time and a falsely-filed `critical` finding can trigger over-rotation away from real work.
+
+**Autonomous regression-case promotion (shipped — F17).** Separate from vuln-report filing: for every FAIL/PARTIAL verdict, the Documentation Agent additionally writes a machine-readable regression entry at `evals/regression/<category>/<attack_id>.json`. This is unconditional and does not gate on severity — regression entries are *replay seeds* for the daemon's target-change-triggered re-run path (§4 / F7), not CISO-facing artifacts, so the human-approval gate doesn't apply. The entry's JSON shape (`documentation.py::_promote_attack_to_regression`) carries:
+
+  - `regression_entry_version` (`REGRESSION_ENTRY_SCHEMA_VERSION`, currently `"1"`)
+  - Provenance: `promoted_from_vuln_id`, `promoted_at`, `source_run_id`, `source_attack_id`, `target_fingerprint_at_promotion`
+  - Taxonomy: `category`, `subcategory`, `owasp_id`, `asi_id`, `atlas_technique_id`
+  - Snapshot at promotion: `severity_at_promotion`, `judge_verdict_at_promotion` (verdict label), `judge_confidence_at_promotion`
+  - Replay envelope: `attack.payload` (PHI-scrubbed), `attack.target_endpoint`, `attack.seed_id`, `attack.mutation_parent`, `attack.mutation_depth`
+
+What is intentionally **not** in the regression entry: the raw target response (still in `evals/results/<run-id>/responses/<atk-id>.json`), the full Judge verdict object with evidence (in `evals/results/<run-id>/verdicts/<ver-id>.json`), and `patient_id` (resolved by the replay loader from the seed YAML keyed by `seed_id`). The regression entry is intentionally minimal so a future replay can reconstruct the attack from the seed lineage plus the payload without dragging stale target-side data forward across target versions.
+
+The Documentation Agent emits an `F17:` log line on every promotion so operators can audit which attacks got promoted in any given run. **Note on format coverage:** F17 writes `.json`; the F7 regression-replay loader currently globs `*.yaml` only (`orchestrator.py::_load_regression_cases`). The bridging work — extending the loader to glob `*.json` alongside `*.yaml` — is tracked as F21 (Aria, in flight at time of writing). Until F21 lands, auto-promoted JSON regression entries exist on disk but aren't picked up by the daemon's automatic replay; YAML-authored entries (e.g., `REGR-001.yaml`) replay as designed.
 
 **Failure modes named.**
 - Confidently documents a false positive (Judge was wrong). Mitigation: report includes Judge confidence + minimum-repro the human can validate before filing.
@@ -447,13 +461,15 @@ evals/
 │   ├── responses/<atk-id>.json            Raw target response
 │   ├── verdicts/<atk-id>.json             JudgeVerdict (per §12.2)
 │   └── coverage-delta.json                What this run added to coverage
-├── regression/<category>/<exploit-id>.yaml Versioned confirmed exploits (input + state)
+├── regression/<category>/<exploit-id>.yaml Versioned confirmed exploits (hand-authored; e.g., REGR-001 from VULN-001)
+├── regression/<category>/<attack-id>.json  F17 auto-promoted regression cases (one per FAIL/PARTIAL verdict)
 ├── vulnerabilities/VULN-<NNN>-DRAFT.md    Documentation Agent output (drafts)
 ├── vulnerabilities/VULN-<NNN>.md          Filed vuln reports (after human approval if high+critical)
 ├── coverage.md                            Per-category attack count + verdict distribution + last-update
-└── calibration/                           Judge ground-truth dataset (Phase 2)
-    ├── ground-truth.yaml                  human-labeled (attack, response, verdict) tuples
-    └── drift-metrics.json                 Judge accuracy over time
+└── ground-truth/
+    └── judge-calibration.yaml             F18 — 15 hand-labeled (attack, response, verdict, criteria) tuples
+                                           (exercised by scripts/run_judge_calibration.py;
+                                            ≥0.80 overall + ≥0.60 per-category + 5pp baseline drift thresholds)
 ```
 
 #### Context B — Platform meta-tests (do the agents themselves work?)
@@ -463,7 +479,7 @@ Tests of the platform's own correctness. Lives in `tests/` (separate from `evals
 | Test class | Trigger | What it tests | Where |
 |---|---|---|---|
 | Unit tests (Python) | Pre-commit + CI | Agent logic, state transitions, criteria evaluation | `tests/unit/` |
-| Judge calibration tests | Nightly + on calibration set update | Judge accuracy ≥ threshold against ground-truth | `tests/calibration/` |
+| Judge calibration tests | On demand (operator-invoked) + on calibration-set update | Mocked-LLM machinery validation in CI (`tests/agents/test_judge_calibration.py`, 14 cases); live-LLM accuracy run via `scripts/run_judge_calibration.py` against 15 ground-truth tuples (≥0.80 overall, ≥0.60 per-category, 5pp baseline drift) | `tests/agents/test_judge_calibration.py` + `scripts/run_judge_calibration.py` |
 | Smoke tests | Pre-commit | One full vertical slice with mocked target + canned LLM responses | `tests/smoke/` |
 | Schema tests | Pre-commit | All inter-agent JSON schemas validate per §12 | `tests/schemas/` |
 
@@ -677,11 +693,12 @@ Every autonomous action recorded with:
 
 ## 8. Cost Management
 
-### 8.1 Per-session caps
+### 8.1 Per-session + rolling-24h caps (two layers)
 
-- Hard cap (env var `MAX_SESSION_COST_USD`, default $10) → halt
-- Soft cap (50% of hard cap) → reduce Red Team scope (single-turn only, fewer mutations)
-- Per-agent caps (env vars per agent) → reduce that agent's call frequency
+- **Per-session hard cap** (env var `MAX_SESSION_COST_USD`, default $10) → halt the active run.
+- **Per-session soft cap** (50% of hard cap) → reduce Red Team scope (single-turn only, fewer mutations).
+- **Per-agent caps** (env vars per agent) → reduce that agent's call frequency.
+- **Rolling-24h aggregate cap** (env var `MAX_DAILY_COST_USD`, default $50, shipped in F19) → daemon **refuses to start a new run** when summed spend across all `evals/results/*/cost-ledger.json` entries within the last 24 hours exceeds the cap. Exits with code 8 and an actionable hint (raise `MAX_DAILY_COST_USD` in `/opt/redteam/.env` and restart, or wait for the rolling window to age out). This layer exists because per-session caps don't protect against compose-level restart loops — a daemon that crashes mid-run, restarts under Docker's `restart: on-failure:3`, and crashes again, could burn dozens of dollars before any operator notices. The daily gate plus the bounded restart policy together make unsupervised operation safe to leave running overnight. The gate measures OpenRouter-side spend only — target-side cost (which is $0 anyway, since the target's Anthropic key isn't ours) is opaque to this layer. See `SETUP.md` for the full env-var description, the troubleshooting row for "daemon won't start, MAX_DAILY_COST_USD" error, and the operational pairing with `restart: on-failure:3`.
 
 ### 8.2 Model-tier strategy — selection-criteria-first + configurable
 
@@ -887,8 +904,8 @@ while not halt_condition_met:
 **NOT in MVP scope (Phase 2+):**
 
 - Multi-turn attack sequences (MVP is single-turn; multi-turn is Phase 2)
-- Regression harness auto-triggering on target version change detection (MVP supports it via `--regression` flag; auto-detection daemon is Phase 2)
-- Judge calibration against human-labeled ground-truth dataset (MVP uses rubric-based criteria; calibration is Phase 2)
+- Regression harness auto-triggering on target version change detection (MVP supported it via `--regression` flag; **F7 added the auto-detection via `/health` fingerprint hashing — daemon now replays automatically on fingerprint change.** F21 in flight extends the regression loader to pick up F17's auto-promoted JSON cases alongside hand-authored YAML.)
+- Judge calibration against human-labeled ground-truth dataset (MVP used rubric-based criteria only; **F18 added the calibration set + runner: 15 hand-labeled tuples at `evals/ground-truth/judge-calibration.yaml`, exercised by `scripts/run_judge_calibration.py` with ≥0.80 overall / ≥0.60 per-category accuracy thresholds and 5pp drift detection versus a JSON baseline. Operator-invoked.**)
 - LLM-augmented Orchestrator (Phase 2 — novel-category suggestion when explicit categories are well-covered)
 - Multi-process / Redis-fronted parallel worker fleet for throughput (Phase 3 — only when single-process throughput becomes the constraint)
 - Multi-judge panel for cross-provider robustness on calibration drift (Phase 2-3)
@@ -950,6 +967,19 @@ The platform tests the Co-Pilot. What tests the platform? The recursion has know
 - **Pragmatic confidence threshold.** A platform that catches 80% of vulnerabilities the day it deploys is much better than no platform; we build to confidence appropriate for the risk class, not mathematical certainty.
 
 This is documented in `THREAT_MODEL.md` §6 (out-of-scope) + addressed throughout this section. The platform's own posture is governed by OWASP ASI Top 10 2026 (cited in §6 above) precisely because we are an autonomous multi-agent system and have to defend against the same agentic risks we're probing.
+
+### 10.4 Reproducibility stance — statistical, not bit-exact
+
+LLM-based evaluation is **statistically reproducible, not bit-exact**. The Red Team Agent, Judge, and target all run with non-zero temperature; the same seed produces variant attacks across runs, and the same `(attack, response)` pair can produce different confidence scores in the Judge across runs (verdict labels are typically stable; confidence is not). Bit-exact replay is **not** the design goal — chasing it would require pinning every model's seed parameter, freezing every provider's weight version, and serializing the temperature-distribution sample, which is operationally impossible across third-party LLM APIs and not necessary for what the platform actually defends.
+
+What the platform guarantees instead:
+
+1. **Every run produces a durable artifact tree** at `evals/results/<run-id>/` containing the exact attack envelope, target response, Judge verdict, criteria-trigger evidence, and per-call cost-ledger entries as JSON. Inspectable forever; any past run is fully reconstructable for human review even if no future LLM call ever returns the same output.
+2. **Every confirmed exploit is pickled into a replayable regression case.** F7's regression replay (manual `--regression` flag + F7's auto-detect via `/health` fingerprint hashing) reads from `evals/regression/<category>/*.yaml` (hand-authored) and — once F21 lands — `*.json` (F17-auto-promoted). Regression replay uses the exact attack payload from the original confirmation; only the target's response varies run-to-run. A regression is "still passing" if the Judge renders the same verdict label, not the same confidence score.
+3. **Judge accuracy is measured against a fixed 15-tuple ground-truth set** (`evals/ground-truth/judge-calibration.yaml`) with a ≥0.80 overall threshold + ≥0.60 per-category + 5pp drift detection vs a JSON baseline. F18's `scripts/run_judge_calibration.py` is the operator-invoked tool. Drift is the statistical signal that something about the Judge or its provider changed; the absolute accuracy number is the comparison point.
+4. **Per-run artifact tree is fully comparable across runs.** `manifest.json` records `run_id`, `target_url`, `target_version_sha`, `target_fingerprint` (F7), `started_at`, `last_updated_at`, and ID lists for attacks / verdicts / vulns / regression-replays. Model names + per-call token counts live in `cost-ledger.json` entries; seed lineage (`mutation_parent`, `mutation_depth`) lives in each `attacks/<atk_id>.json`; verdict labels + evidence + confidence live in each `verdicts/<ver_id>.json`; halt reason is emitted to stdout as the daemon exits and captured in the operator's log redirect rather than persisted to manifest. Two runs against the same target version that disagree on a verdict can be inspected by reading these artifacts side-by-side to determine whether the disagreement is Judge noise (acceptable) or a real signal of target drift (worth a regression rerun).
+
+The honest framing for a grader: this is the right reproducibility stance for an adversarial-AI testing platform, not a compromise. Bit-exactness would mask the actual scientific question, which is "is the target's defensive posture *the same* across versions?" — a question that's answered statistically, not bit-for-bit.
 
 ---
 
