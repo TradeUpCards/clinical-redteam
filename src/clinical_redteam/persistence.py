@@ -206,6 +206,7 @@ class RunHandle:
         trace_id: str | None,
         assistant_text: str,
         extraction: dict[str, Any] | None,
+        raw_body: dict[str, Any] | None = None,
     ) -> Path:
         """F23 — persist the target's response per attack for forensic review.
 
@@ -238,6 +239,14 @@ class RunHandle:
             "trace_id": trace_id,
             "assistant_text": assistant_text,
             "extraction": extraction,
+            # F25: persist the parsed JSON body so 4xx/5xx responses carry
+            # their diagnostic `reason` / `error` text on disk. F23 omitted
+            # this — for 200s the body IS the extraction we already capture,
+            # but for 400s the body's `"reason"` is the only signal a
+            # post-hoc reviewer has. Defensive: `raw_body=None` is the
+            # legacy shape, written when the caller can't supply (e.g.
+            # /chat responses through the same persistence path).
+            "raw_body": raw_body,
             "received_at": _now_iso(),
         }
         self._save_unique(path, payload, identity=attack_id)

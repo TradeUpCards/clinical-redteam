@@ -665,10 +665,11 @@ class TargetClient:
         )
 
         url = self.base_url.rstrip("/") + "/attach_and_extract"
-        # Multipart form: `file` part carries the PDF bytes; all other
-        # fields are form-encoded. The signature lives in the form body
-        # rather than a header so it's covered by the same HMAC payload
-        # the target re-derives during verify.
+        # Multipart form: `file` part carries the PDF bytes; form body
+        # carries ONLY W2's `Form(...)` declarations (patient_id,
+        # doc_ref_id, doc_type — see agent/main.py:272-360). Auth fields
+        # (user_id, timestamp, signature) live in X-OpenEMR-* request
+        # headers per the F25 fix below.
         files = {
             "file": (
                 f"{ref_id}.pdf",
@@ -676,18 +677,38 @@ class TargetClient:
                 "application/pdf",
             )
         }
+        # F25 fix: W2's `/attach_and_extract` endpoint
+        # (agent/main.py:272-360) declares ONLY `patient_id`, `doc_ref_id`,
+        # `doc_type`, `file` as `Form(...)` fields. The auth triple
+        # (user_id, timestamp, signature) is read from HTTP HEADERS, not
+        # form fields:
+        #   X-OpenEMR-User-Id   ← str(user_id)
+        #   X-OpenEMR-Timestamp ← str(timestamp)
+        #   X-OpenEMR-HMAC      ← sig
+        # Pre-F25 we sent everything as form fields → empty
+        # X-OpenEMR-User-Id header → `int("")` → 400
+        # `missing_or_invalid_user_id` → never reached HMAC verify, never
+        # reached Haiku. F25 moves the three fields to headers. The HMAC
+        # payload formula is UNCHANGED — see compute_attach_hmac.
+        headers = {
+            "X-OpenEMR-User-Id": str(self.user_id),
+            "X-OpenEMR-Timestamp": str(timestamp),
+            "X-OpenEMR-HMAC": sig,
+        }
         data = {
-            "user_id": str(self.user_id),
             "patient_id": str(patient_id),
             "doc_ref_id": ref_id,
             "doc_type": doc_type,
-            "timestamp": str(timestamp),
-            "signature": sig,
-            "session_id": session_id or uuid.uuid4().hex,
         }
+        # `session_id` removed: not declared as Form() on W2 side; sending
+        # it was harmless but inflated the multipart body. Kept session
+        # tracking out of band via Langfuse spans instead.
+        _ = session_id  # accepted for API stability; not on the wire
 
         started = time.perf_counter()
-        response = self._post_multipart_with_backoff(url, files=files, data=data)
+        response = self._post_multipart_with_backoff(
+            url, files=files, data=data, headers=headers,
+        )
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         if response.status_code == 401:
@@ -701,7 +722,10 @@ class TargetClient:
         try:
             parsed = response.json()
         except ValueError:
-            parsed = {"_non_json_body": response.text[:1000]}
+            # F25 defensive: 4xx/5xx may return HTML error pages, plain
+            # text from misconfigured proxies, or empty bodies. Persist
+            # what we got so the next 400 isn't blind — see ticket §2.
+            parsed = {"raw_text": response.text[:2000]}
 
         # Per audit §C-A confirmation signals: `extraction.current_medications`,
         # `extraction.allergies`, `extraction_confidence_avg`. The Judge needs
@@ -775,8 +799,13 @@ class TargetClient:
         *,
         files: dict[str, tuple[str, bytes, str]],
         data: dict[str, str],
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """POST multipart/form-data with the same retry posture as JSON POSTs.
+
+        F25: `headers=` threads the X-OpenEMR-* auth triple through to
+        httpx so W2's endpoint sees them as request headers (the shape
+        its FastAPI signature expects), not as multipart form fields.
 
         Mirrors `_post_with_backoff`'s contract: bounded retries on 5xx +
         connection errors with exponential backoff; 2xx/3xx/non-401 4xx
@@ -793,7 +822,9 @@ class TargetClient:
         for attempt in range(attempts):
             is_last = attempt + 1 >= attempts
             try:
-                response = self.http_client.post(url, files=files, data=data)
+                response = self.http_client.post(
+                    url, files=files, data=data, headers=headers or {},
+                )
             except (httpx.ConnectError, httpx.ReadTimeout) as exc:
                 last_exc = exc
                 logger.warning(
